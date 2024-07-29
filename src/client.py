@@ -34,7 +34,7 @@ async def on_ready():
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
-@app_commands.checks.cooldown(3, 60, key=lambda x: x.guild_id)
+@app_commands.checks.cooldown(1, 5, key=lambda x: (x.guild_id, x.user.id))
 async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
     map_ids = sanitize(u_input)
