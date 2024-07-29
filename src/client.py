@@ -34,7 +34,7 @@ async def on_ready():
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
-@app_commands.checks.cooldown(1, 5, key=lambda x: (x.guild_id, x.user.id))
+@app_commands.checks.cooldown(3, 60)
 async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
     map_ids = sanitize(u_input)
@@ -48,7 +48,7 @@ async def validate(ctx, u_input: str):
         return
 
     embed = discord.Embed()
-    embed.color = discord.Color.blurple()
+    embed.colour = discord.Colour.blurple()
     embed.title = "Mappool verification result"
 
     try:
@@ -68,6 +68,12 @@ async def validate(ctx, u_input: str):
     except ValueError as e:
         await ctx.response.send_message(f'Invalid input [{e}].')
         return
+
+
+@tree.error
+async def on_app_command_error(interaction, error):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
 
 
 def description(artist_info: list[ArtistData]) -> str:
