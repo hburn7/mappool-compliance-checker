@@ -24,6 +24,7 @@ oss_client = OssapiAsync(client_id, client_secret)
 
 logger = logging.getLogger('client')
 
+
 @client.event
 async def on_ready():
     logger.info(f'Logged in as {client.user}')
@@ -37,6 +38,10 @@ async def on_ready():
 async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, or tabs."""
     map_ids = sanitize(u_input)
+
+    if len(map_ids) > 50:
+        await ctx.response.send_message('Too many map IDs provided.')
+        return
 
     if not map_ids:
         await ctx.response.send_message('Invalid input (map id collection empty).')
