@@ -38,12 +38,11 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            mkdir -p ~/omcc || true
-            cd ~/omcc
-            echo CLIENT_ID=${{ secrets.CLIENT_ID }} >> .env
-            echo CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} >> .env
-            echo TOKEN=${{ secrets.TOKEN }} >> .env
             docker stop omcc || true
             docker rm omcc || true
             docker pull stagecodes/omcc:latest
-            docker run -d --restart always --name omcc stagecodes/osu-mappool-compliance-checker:latest
+            docker run -d --restart always --name omcc \
+            -e CLIENT_ID=${{ secrets.CLIENT_ID }} \
+            -e CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} \
+            -e TOKEN=${{ secrets.TOKEN }} \
+            stagecodes/osu-mappool-compliance-checker:latest

@@ -5,6 +5,7 @@ import os
 import ossapi
 
 from discord import app_commands
+from discord.ext import commands
 from dotenv import load_dotenv
 from ossapi import OssapiAsync
 
@@ -32,6 +33,7 @@ async def on_ready():
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
+@commands.cooldown(3, 60, commands.BucketType.guild)
 async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, or tabs."""
     map_ids = sanitize(u_input)
