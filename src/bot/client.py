@@ -1,7 +1,9 @@
 import discord
 import os
+import src.validator as validator
 
-from ossapi import Ossapi
+import ossapi
+from ossapi import OssapiAsync
 from discord import app_commands
 
 intents = discord.Intents.default()
@@ -11,6 +13,8 @@ tree = app_commands.CommandTree(client)
 client_id = int(os.getenv('CLIENT_ID'))
 client_secret = os.getenv('CLIENT_SECRET')
 bot_token = os.getenv('TOKEN')
+
+oss_client = OssapiAsync(client_id, client_secret)
 
 
 @client.event
@@ -30,7 +34,19 @@ async def validate(ctx, u_input: str):
         await ctx.response.send_message('Invalid input (map id collection empty).')
         return
 
-    await ctx.response.send_message(f'Validating {len(map_ids)} maps...')
+    embed = discord.Embed()
+    embed.title = "Mappool verification result"
+
+    try:
+        # beatmapsets = await fetch_beatmapsets(map_ids)
+        # artists = set([b.artist for b in beatmapsets])
+
+        data = validator.parse_osu_rules()
+
+        await ctx.response.send_message(data)
+    except ValueError:
+        await ctx.response.send_message('Invalid input (maps could not be found).')
+        return
 
 
 def sanitize(u_input: str) -> set[int]:
@@ -54,8 +70,9 @@ def sanitize(u_input: str) -> set[int]:
     return set(ids)
 
 
-def oss_client() -> Ossapi:
-    return Ossapi(client_id, client_secret)
+async def fetch_beatmapsets(ids: set[int]) -> list[ossapi.Beatmapset]:
+    """Fetches the beatmaps for the provided ids"""
+    return [await oss_client.beatmapset(i) for i in ids]
 
 
 def run():
