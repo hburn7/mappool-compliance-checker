@@ -11,18 +11,29 @@ class ArtistData:
     status: str
     notes: str
 
+    def markdown(self):
+        s = ""
+        if self.fa:
+            s += f"[{self.artist}]({self.fa_url})"
+        else:
+            s += self.artist
+
+        if self.status == "partial":
+            s += f" ({self.notes})"
+
+        return s
+
     def __repr__(self):
         return f"ArtistData(fa={self.fa}, fa_url={self.fa_url}, artist={self.artist}, status={self.status}, notes={self.notes})"
 
 
-def parse_osu_rules():
+def parse_osu_rules() -> dict[str, ArtistData]:
     # Read the file content
     with open(file_path, 'r', encoding='utf-8') as file:
         content = file.read()
-        artists = identify_artists(content)
+        data = identify_artists(content)
+        return {a.artist: a for a in data}
 
-        for a in artists:
-            print(a)
 
 def identify_artists(content: str) -> list[ArtistData]:
     r = []
@@ -38,7 +49,7 @@ def identify_artists(content: str) -> list[ArtistData]:
 
             # Append the id to the artist url
             data.fa_url = "https://osu.ppy.sh/beatmaps/artists/" + \
-                          sections[0].split('https://osu.ppy.sh/beatmaps/artists/')[1]
+                          sections[0].split('https://osu.ppy.sh/beatmaps/artists/')[1].split(')')[0].strip()
             data.artist = sections[1].strip().split('[')[1].split(']')[0]
             data.status = "true" if "true" in sections[2] else "partial"
 
@@ -50,5 +61,13 @@ def identify_artists(content: str) -> list[ArtistData]:
             data.status = "false"
 
         r.append(data)
+        print(data)
 
     return r
+
+
+artist_data = None
+
+# We only want to parse this once to save resources
+if artist_data is None:
+    artist_data = parse_osu_rules()

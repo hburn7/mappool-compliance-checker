@@ -5,6 +5,7 @@ import src.validator as validator
 import ossapi
 from ossapi import OssapiAsync
 from discord import app_commands
+from src.validator import artist_data
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -35,18 +36,57 @@ async def validate(ctx, u_input: str):
         return
 
     embed = discord.Embed()
+    embed.color = discord.Color.blurple()
     embed.title = "Mappool verification result"
 
     try:
-        # beatmapsets = await fetch_beatmapsets(map_ids)
-        # artists = set([b.artist for b in beatmapsets])
+        beatmapsets = await fetch_beatmapsets(map_ids)
+        artists = set([b.artist for b in beatmapsets])
+        relevant_data = []
 
-        data = validator.parse_osu_rules()
+        for a in artists:
+            if a in artist_data:
+                relevant_data.append(artist_data[a])
+            else:
+                relevant_data.append(validator.ArtistData(False, "", a, "unspecified", ""))
 
-        await ctx.response.send_message(data)
-    except ValueError:
-        await ctx.response.send_message('Invalid input (maps could not be found).')
+        embed.description = description(relevant_data)
+
+        await ctx.response.send_message(embed=embed)
+    except ValueError as e:
+        await ctx.response.send_message(f'Invalid input (maps could not be found) [{e}].')
         return
+
+
+def description(artist_info: list[validator.ArtistData]) -> str:
+    s = ""
+
+    disallowed = [x for x in artist_info if x.status == "false"]
+    allowed = [x for x in artist_info if x.status == "true"]
+    unspecified = [x for x in artist_info if x.status == "unspecified"]
+    partial = [x for x in artist_info if x.status == "partial"]
+
+    if disallowed:
+        s += "__**Disallowed artists found:**__\n"
+        for d in disallowed:
+            s += f"❌ {d.markdown()}\n"
+
+    if partial:
+        s += "__**Partially allowed artists found:**__\n"
+        for p in partial:
+            s += f"⚠️{p.markdown()}\n"
+
+    if unspecified:
+        s += "__**Unspecified artists found:**__\n"
+        for u in unspecified:
+            s += f"❔ {u.markdown()}"
+
+    if allowed:
+        s += "__**Allowed artists found:**__\n"
+        for a in allowed:
+            s += f"✅ {a.markdown()}"
+
+    return s
 
 
 def sanitize(u_input: str) -> set[int]:
@@ -62,6 +102,9 @@ def sanitize(u_input: str) -> set[int]:
     for part in parts:
         try:
             # Try to convert each part to an integer
+            if '/' in part:
+                part = part.split('/')[-1]
+
             ids.append(int(part))
         except ValueError:
             # If any part is not an integer, return an empty list
@@ -72,7 +115,8 @@ def sanitize(u_input: str) -> set[int]:
 
 async def fetch_beatmapsets(ids: set[int]) -> list[ossapi.Beatmapset]:
     """Fetches the beatmaps for the provided ids"""
-    return [await oss_client.beatmapset(i) for i in ids]
+    beatmaps = await oss_client.beatmaps(list(ids))
+    return [b.beatmapset() for b in beatmaps]
 
 
 def run():
