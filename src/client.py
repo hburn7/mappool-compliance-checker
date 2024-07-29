@@ -1,12 +1,12 @@
-import logging
-
 import discord
+import logging
+import logging.handlers
 import os
-from dotenv import load_dotenv
-
 import ossapi
-from ossapi import OssapiAsync
+
 from discord import app_commands
+from dotenv import load_dotenv
+from ossapi import OssapiAsync
 
 from validator import artist_data, ArtistData
 
@@ -21,13 +21,14 @@ bot_token = os.getenv('TOKEN')
 
 oss_client = OssapiAsync(client_id, client_secret)
 
+logger = logging.getLogger('client')
 
 @client.event
 async def on_ready():
-    logging.info(f'Logged in as {client.user}')
+    logger.info(f'Logged in as {client.user}')
     await tree.sync()
 
-    logging.info('Commands synced, bot is ready!')
+    logger.info('Commands synced, bot is ready!')
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
@@ -69,6 +70,11 @@ def description(artist_info: list[ArtistData]) -> str:
     allowed = [x for x in artist_info if x.status == "true"]
     unspecified = [x for x in artist_info if x.status == "unspecified"]
     partial = [x for x in artist_info if x.status == "partial"]
+
+    disallowed.sort(key=lambda x: x.artist)
+    allowed.sort(key=lambda x: x.artist)
+    unspecified.sort(key=lambda x: x.artist)
+    partial.sort(key=lambda x: x.artist)
 
     if disallowed:
         s += "__**Disallowed artists found:**__\n"
@@ -132,5 +138,27 @@ async def fetch_beatmapsets(ids: set[int]) -> list[ossapi.Beatmapset]:
 
 
 def run():
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    handler = logging.handlers.RotatingFileHandler(
+        filename='logs/discord.log',
+        encoding='utf-8',
+        maxBytes=32 * 1024 * 1024,  # 32 MiB
+        backupCount=5  # Rotate through 5 files
+    )
+    dt_fmt = '%Y-%m-%d %H:%M:%S'
+    formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
+    handler.setFormatter(formatter)
+    root_logger.addHandler(handler)
+
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)  # Reuse the same formatter
+    root_logger.addHandler(console_handler)
+
     token = os.getenv('TOKEN')
-    client.run(token)
+    client.run(token, log_handler=None)
