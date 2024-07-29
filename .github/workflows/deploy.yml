@@ -4,11 +4,6 @@ on:
   push:
     branches: ["master"]
 
-env:
-  CLIENT_ID: ${{ secrets.CLIENT_ID }}
-  CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-  TOKEN: ${{ secrets.TOKEN }}
-
 jobs:
   build:
     name: Build
@@ -43,7 +38,12 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            docker stop otr-docs || true
-            docker rm otr-docs || true
-            docker pull stagecodes/otr-docs-prod:latest
-            docker run -d -p 3800:80 --restart always --name otr-docs stagecodes/otr-docs-prod:latest
+            mkdir -p ~/omcc || true
+            cd ~/omcc
+            echo CLIENT_ID=${{ secrets.CLIENT_ID }} >> .env
+            echo CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} >> .env
+            echo TOKEN=${{ secrets.TOKEN }} >> .env
+            docker stop omcc || true
+            docker rm omcc || true
+            docker pull stagecodes/omcc:latest
+            docker run -d --restart always --name omcc stagecodes/osu-mappool-compliance-checker:latest
