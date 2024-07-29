@@ -1,0 +1,49 @@
+name: Deploy
+
+on:
+  push:
+    branches: ["master"]
+
+env:
+  CLIENT_ID: ${{ secrets.CLIENT_ID }}
+  CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+  TOKEN: ${{ secrets.TOKEN }}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: stagecodes
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v3
+        with:
+          push: true
+          tags: stagecodes/osu-mappool-compliance-checker:latest
+
+  deploy:
+    name: Deploy
+    environment: Production
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            docker stop otr-docs || true
+            docker rm otr-docs || true
+            docker pull stagecodes/otr-docs-prod:latest
+            docker run -d -p 3800:80 --restart always --name otr-docs stagecodes/otr-docs-prod:latest
