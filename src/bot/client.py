@@ -14,15 +14,15 @@ bot_token = os.getenv('TOKEN')
 
 
 @client.event
-async def on_ready_async():
+async def on_ready():
     print(f'Logged in as {client.user}')
     await tree.sync()
 
     print('Commands synced, bot is ready!')
 
 
-@tree.command(name="validate", description="Validates a list of maps against osu!'s content-usage listing.")
-async def validate_async(ctx, u_input: str):
+@tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
+async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, or tabs."""
     map_ids = sanitize(u_input)
 
