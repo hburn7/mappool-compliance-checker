@@ -40,7 +40,7 @@ jobs:
           script: |
             docker stop omcc || true
             docker rm omcc || true
-            docker pull stagecodes/omcc:latest
+            docker pull stagecodes/osu-mappool-compliance-checker:latest
             docker run -d --restart always --name omcc \
             -e CLIENT_ID=${{ secrets.CLIENT_ID }} \
             -e CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} \
