@@ -71,20 +71,28 @@ def description(artist_info: list[validator.ArtistData]) -> str:
         for d in disallowed:
             s += f"❌ {d.markdown()}\n"
 
+        s += "\n"
+
     if partial:
         s += "__**Partially allowed artists found:**__\n"
         for p in partial:
             s += f"⚠️{p.markdown()}\n"
 
+        s += "\n"
+
     if unspecified:
         s += "__**Unspecified artists found:**__\n"
         for u in unspecified:
-            s += f"❔ {u.markdown()}"
+            s += f"❔ {u.markdown()}\n"
+
+        s += "\n"
 
     if allowed:
         s += "__**Allowed artists found:**__\n"
         for a in allowed:
-            s += f"✅ {a.markdown()}"
+            s += f"✅ {a.markdown()}\n"
+
+        s += "\n"
 
     return s
 

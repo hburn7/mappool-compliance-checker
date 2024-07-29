@@ -61,7 +61,6 @@ def identify_artists(content: str) -> list[ArtistData]:
             data.status = "false"
 
         r.append(data)
-        print(data)
 
     return r
 
