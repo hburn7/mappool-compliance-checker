@@ -1,10 +1,4 @@
-# Do not alter import order
-from dotenv import load_dotenv
-
-load_dotenv()
-
-import bot.client as bot
-
+import client as bot
 
 def main():
     bot.run()

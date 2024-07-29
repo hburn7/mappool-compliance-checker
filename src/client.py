@@ -1,16 +1,20 @@
+import logging
+
 import discord
 import os
-import src.validator as validator
+from dotenv import load_dotenv
 
 import ossapi
 from ossapi import OssapiAsync
 from discord import app_commands
-from src.validator import artist_data
+
+from validator import artist_data, ArtistData
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
+load_dotenv()
 client_id = int(os.getenv('CLIENT_ID'))
 client_secret = os.getenv('CLIENT_SECRET')
 bot_token = os.getenv('TOKEN')
@@ -20,10 +24,10 @@ oss_client = OssapiAsync(client_id, client_secret)
 
 @client.event
 async def on_ready():
-    print(f'Logged in as {client.user}')
+    logging.info(f'Logged in as {client.user}')
     await tree.sync()
 
-    print('Commands synced, bot is ready!')
+    logging.info('Commands synced, bot is ready!')
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
@@ -48,17 +52,17 @@ async def validate(ctx, u_input: str):
             if a in artist_data:
                 relevant_data.append(artist_data[a])
             else:
-                relevant_data.append(validator.ArtistData(False, "", a, "unspecified", ""))
+                relevant_data.append(ArtistData(False, "", a, "unspecified", ""))
 
         embed.description = description(relevant_data)
 
         await ctx.response.send_message(embed=embed)
     except ValueError as e:
-        await ctx.response.send_message(f'Invalid input (maps could not be found) [{e}].')
+        await ctx.response.send_message(f'Invalid input [{e}].')
         return
 
 
-def description(artist_info: list[validator.ArtistData]) -> str:
+def description(artist_info: list[ArtistData]) -> str:
     s = ""
 
     disallowed = [x for x in artist_info if x.status == "false"]
