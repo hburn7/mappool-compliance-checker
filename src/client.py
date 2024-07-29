@@ -1,11 +1,10 @@
-import discord
 import logging
 import logging.handlers
 import os
-import ossapi
 
+import discord
+import ossapi
 from discord import app_commands
-from discord.ext import commands
 from dotenv import load_dotenv
 from ossapi import OssapiAsync
 

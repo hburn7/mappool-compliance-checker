@@ -57,9 +57,13 @@ def identify_artists(content: str) -> list[ArtistData]:
                 data.notes = sections[3].strip()
         else:
             # Not a featured artist, artist name is in this section
-            data.artist = sections[0].strip()
+            if sections[0].strip() == "":
+                data.artist = sections[1].strip()
+            else:
+                data.artist = sections[0].strip()
             data.status = "false"
 
+        data.artist = data.artist.replace("\\", "")
         r.append(data)
 
     return r
