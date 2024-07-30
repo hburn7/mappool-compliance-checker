@@ -33,12 +33,12 @@ async def on_ready():
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
-@app_commands.checks.cooldown(3, 60)
+@app_commands.checks.cooldown(10, 45)
 async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
     map_ids = sanitize(u_input)
 
-    if len(map_ids) > 50:
+    if len(map_ids) > 100:
         await ctx.response.send_message('Too many map IDs provided.')
         return
 
