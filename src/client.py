@@ -109,6 +109,10 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
             icon = "💞" if b in loved else "✅"
             s += f"{icon} [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
 
+            if len(s) > 1300:
+                s += f":fast_forward: ... [truncated {len(bypass) - bypass.index(b)} beatmapsets]\n"
+                break
+
         s += "\n"
 
     if scrutinize:
@@ -143,6 +147,10 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
         if remaining:
             s += "__**Pending/Graveyard beatmapsets:**__\n"
             for b in remaining:
+                if len(s) > 1700:
+                    s += f":fast_forward: ... [truncated {len(remaining) - remaining.index(b)} beatmapsets]\n"
+                    break
+
                 s += f":ballot_box_with_check: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
 
             s += "\n"
