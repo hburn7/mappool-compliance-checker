@@ -4,9 +4,10 @@ import os
 
 import discord
 import ossapi
+from ossapi.enums import RankStatus
 from discord import app_commands
 from dotenv import load_dotenv
-from ossapi import OssapiAsync
+from ossapi import OssapiAsync, Beatmapset
 
 from validator import artist_data, ArtistData
 
@@ -51,20 +52,22 @@ async def validate(ctx, u_input: str):
     embed.title = "Mappool verification result"
 
     try:
-        beatmapsets = await fetch_beatmapsets(map_ids)
+        beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
         artists = set([b.artist for b in beatmapsets])
-        relevant_data = []
+        dmca_sets = [b for b in beatmapsets if b.availability.download_disabled]
+        artist_info = []
 
         for a in artists:
             if a in artist_data:
-                relevant_data.append(artist_data[a])
+                artist_info.append(artist_data[a])
             else:
-                relevant_data.append(ArtistData(False, "", a, "unspecified", ""))
+                artist_info.append(ArtistData(False, "", a, "unspecified", ""))
 
-        embed.description = description(relevant_data)
+        embed.description = description(artist_info, beatmapsets, dmca_sets)
 
         await ctx.response.send_message(embed=embed)
     except ValueError as e:
+        logger.warning(f'Invalid input [{e}].')
         await ctx.response.send_message(f'Invalid input [{e}].')
         return
 
@@ -75,46 +78,77 @@ async def on_app_command_error(interaction, error):
         await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
 
 
-def description(artist_info: list[ArtistData]) -> str:
+def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dmca_sets: list[Beatmapset] | None) -> str:
     s = ""
 
+    if dmca_sets:
+        s += "__**DMCA'd beatmapsets found:**__\n"
+        for dmca_set in dmca_sets:
+            s += f":warning: :bangbang: [{dmca_set.artist} - {dmca_set.title}](https://osu.ppy.sh/beatmapsets/{dmca_set.id})\n"
+
+        s += "\n"
+
+    ranked = [b for b in beatmapsets if (b.ranked == RankStatus.RANKED or b.ranked == RankStatus.APPROVED) and b not in dmca_sets]
+    qualified = [b for b in beatmapsets if b.ranked == RankStatus.QUALIFIED and b not in dmca_sets]
+    loved = [b for b in beatmapsets if b.ranked == RankStatus.LOVED and b not in dmca_sets]
+    pending = [b for b in beatmapsets if (b.ranked == RankStatus.PENDING or b.ranked == RankStatus.WIP) and b not in dmca_sets]
+    graveyard = [b for b in beatmapsets if b.ranked == RankStatus.GRAVEYARD and b not in dmca_sets]
+
+    bypass = ranked + loved
+    scrutinize = qualified + pending + graveyard
+
     disallowed = [x for x in artist_info if x.status == "false"]
-    allowed = [x for x in artist_info if x.status == "true"]
-    unspecified = [x for x in artist_info if x.status == "unspecified"]
     partial = [x for x in artist_info if x.status == "partial"]
 
-    disallowed.sort(key=lambda x: x.artist)
-    allowed.sort(key=lambda x: x.artist)
-    unspecified.sort(key=lambda x: x.artist)
-    partial.sort(key=lambda x: x.artist)
+    if bypass:
+        s += "__**Ranked/Loved beatmapsets:**__\n"
+        for b in bypass:
+            if b in dmca_sets:
+                continue
 
-    if disallowed:
-        s += "__**Disallowed artists found:**__\n"
-        for d in disallowed:
-            s += f"❌ {d.markdown()}\n"
-
-        s += "\n"
-
-    if partial:
-        s += "__**Partially allowed artists found:**__\n"
-        for p in partial:
-            s += f"⚠️{p.markdown()}\n"
+            icon = "💞" if b in loved else "✅"
+            s += f"{icon} [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
 
         s += "\n"
 
-    if unspecified:
-        s += "__**Unspecified artists found:**__\n"
-        for u in unspecified:
-            s += f"❔ {u.markdown()}\n"
+    if scrutinize:
+        found_disallowed = []
+        found_partial = []
 
-        s += "\n"
+        for b in scrutinize:
+            if b in dmca_sets:
+                continue
 
-    if allowed:
-        s += "__**Allowed artists found:**__\n"
-        for a in allowed:
-            s += f"✅ {a.markdown()}\n"
+            if b.artist in disallowed:
+                found_disallowed.append(b)
+            elif b.artist in partial:
+                found_partial.append(b)
 
-        s += "\n"
+        if found_disallowed:
+            s += "__**Disallowed beatmapsets:**__\n"
+            for b in found_disallowed:
+                s += f"❌ [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
+
+            s += "\n"
+
+        elif found_partial:
+            s += "__**Partially disallowed beatmapsets:**__\n"
+            for b in found_partial:
+                partial = [x for x in artist_info if x.artist == b.artist][0]
+                s += f":warning: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id}) ({partial.notes})\n"
+
+            s += "\n"
+
+        remaining = [b for b in scrutinize if b not in found_disallowed and b not in found_partial]
+        if remaining:
+            s += "__**Pending/Graveyard beatmapsets:**__\n"
+            for b in remaining:
+                s += f":ballot_box_with_check: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
+
+            s += "\n"
+
+        if not found_disallowed and not found_partial and not dmca_sets:
+            s += "__**No disallowed beatmapsets found! :partying_face:**__"
 
     return s
 
@@ -127,6 +161,10 @@ def sanitize(u_input: str) -> set[int]:
              .replace(',', ' ')
              .replace('\t', ' ')
              .replace('\n', ' ')
+             .replace('#osu', '')
+             .replace('#taiko', '')
+             .replace('#fruits', '')
+             .replace('#mania', '')
              .split())
 
     for part in parts:
@@ -143,10 +181,21 @@ def sanitize(u_input: str) -> set[int]:
     return set(ids)
 
 
-async def fetch_beatmapsets(ids: set[int]) -> list[ossapi.Beatmapset]:
-    """Fetches the beatmaps for the provided ids"""
+async def fetch_beatmapsets(ids: set[int]) -> (list[ossapi.Beatmapset], list[int]):
+    """Fetches the beatmaps for the provided ids
+
+    :param ids: A set of beatmap ids
+
+    :return: A tuple containing a list of beatmapsets and a list of ids which were not found"""
     beatmaps = await oss_client.beatmaps(list(ids))
-    return [b.beatmapset() for b in beatmaps]
+    returned_beatmapset_ids = set([b.beatmapset_id for b in beatmaps])
+
+    all_ids = returned_beatmapset_ids | set([b.id for b in beatmaps])
+
+    # Find beatmapsets of any ids which were not found here
+    error_ids = ids - all_ids
+
+    return [b.beatmapset() for b in beatmaps], error_ids
 
 
 def run():
