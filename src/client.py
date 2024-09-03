@@ -6,7 +6,7 @@ import discord
 import ossapi
 from discord import app_commands
 from dotenv import load_dotenv
-from ossapi import OssapiAsync
+from ossapi import OssapiAsync, Beatmapset
 
 from validator import artist_data, ArtistData
 
@@ -53,6 +53,7 @@ async def validate(ctx, u_input: str):
     try:
         beatmapsets = await fetch_beatmapsets(map_ids)
         artists = set([b.artist for b in beatmapsets])
+        dmca_sets = set([b for b in beatmapsets if b.availability.download_disabled])
         relevant_data = []
 
         for a in artists:
@@ -61,7 +62,7 @@ async def validate(ctx, u_input: str):
             else:
                 relevant_data.append(ArtistData(False, "", a, "unspecified", ""))
 
-        embed.description = description(relevant_data)
+        embed.description = description(relevant_data, dmca_sets)
 
         await ctx.response.send_message(embed=embed)
     except ValueError as e:
@@ -75,9 +76,16 @@ async def on_app_command_error(interaction, error):
         await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
 
 
-def description(artist_info: list[ArtistData]) -> str:
+def description(artist_info: list[ArtistData], dmca_sets: list[Beatmapset] | None) -> str:
     s = ""
 
+    if dmca_sets:
+        s += "__**DMCA'd beatmapsets found:**__\n"
+        for dmca_set in dmca_sets:
+            s += f"❌ [{dmca_set.artist} - {dmca_set.title}]({dmca_set.legacy_thread_url})\n"
+
+        s += "\n"
+        
     disallowed = [x for x in artist_info if x.status == "false"]
     allowed = [x for x in artist_info if x.status == "true"]
     unspecified = [x for x in artist_info if x.status == "unspecified"]
@@ -90,8 +98,8 @@ def description(artist_info: list[ArtistData]) -> str:
 
     if disallowed:
         s += "__**Disallowed artists found:**__\n"
-        for d in disallowed:
-            s += f"❌ {d.markdown()}\n"
+        for dmca_set in disallowed:
+            s += f"❌ {dmca_set.markdown()}\n"
 
         s += "\n"
 
@@ -146,6 +154,9 @@ def sanitize(u_input: str) -> set[int]:
 async def fetch_beatmapsets(ids: set[int]) -> list[ossapi.Beatmapset]:
     """Fetches the beatmaps for the provided ids"""
     beatmaps = await oss_client.beatmaps(list(ids))
+
+
+
     return [b.beatmapset() for b in beatmaps]
 
 
