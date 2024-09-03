@@ -51,9 +51,9 @@ async def validate(ctx, u_input: str):
     embed.title = "Mappool verification result"
 
     try:
-        beatmapsets = await fetch_beatmapsets(map_ids)
+        beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
         artists = set([b.artist for b in beatmapsets])
-        dmca_sets = set([b for b in beatmapsets if b.availability.download_disabled])
+        dmca_sets = [b for b in beatmapsets if b.availability.download_disabled]
         relevant_data = []
 
         for a in artists:
@@ -66,6 +66,7 @@ async def validate(ctx, u_input: str):
 
         await ctx.response.send_message(embed=embed)
     except ValueError as e:
+        logger.warning(f'Invalid input [{e}].')
         await ctx.response.send_message(f'Invalid input [{e}].')
         return
 
@@ -82,7 +83,7 @@ def description(artist_info: list[ArtistData], dmca_sets: list[Beatmapset] | Non
     if dmca_sets:
         s += "__**DMCA'd beatmapsets found:**__\n"
         for dmca_set in dmca_sets:
-            s += f"❌ [{dmca_set.artist} - {dmca_set.title}]({dmca_set.legacy_thread_url})\n"
+            s += f":warning: :bangbang: [{dmca_set.artist} - {dmca_set.title}](https://osu.ppy.sh/beatmapsets/{dmca_set.id})\n"
 
         s += "\n"
         
@@ -135,6 +136,10 @@ def sanitize(u_input: str) -> set[int]:
              .replace(',', ' ')
              .replace('\t', ' ')
              .replace('\n', ' ')
+             .replace('#osu', '')
+             .replace('#taiko', '')
+             .replace('#fruits', '')
+             .replace('#mania', '')
              .split())
 
     for part in parts:
@@ -151,13 +156,21 @@ def sanitize(u_input: str) -> set[int]:
     return set(ids)
 
 
-async def fetch_beatmapsets(ids: set[int]) -> list[ossapi.Beatmapset]:
-    """Fetches the beatmaps for the provided ids"""
+async def fetch_beatmapsets(ids: set[int]) -> (list[ossapi.Beatmapset], list[int]):
+    """Fetches the beatmaps for the provided ids
+
+    :param ids: A set of beatmap ids
+
+    :return: A tuple containing a list of beatmapsets and a list of ids which were not found"""
     beatmaps = await oss_client.beatmaps(list(ids))
+    returned_beatmapset_ids = set([b.beatmapset_id for b in beatmaps])
 
+    all_ids = returned_beatmapset_ids | set([b.id for b in beatmaps])
 
+    # Find beatmapsets of any ids which were not found here
+    error_ids = ids - all_ids
 
-    return [b.beatmapset() for b in beatmaps]
+    return [b.beatmapset() for b in beatmaps], error_ids
 
 
 def run():
