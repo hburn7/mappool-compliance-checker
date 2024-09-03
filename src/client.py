@@ -88,10 +88,10 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
 
         s += "\n"
 
-    ranked = [b for b in beatmapsets if b.ranked == RankStatus.RANKED and b not in dmca_sets]
+    ranked = [b for b in beatmapsets if (b.ranked == RankStatus.RANKED or b.ranked == RankStatus.APPROVED) and b not in dmca_sets]
     qualified = [b for b in beatmapsets if b.ranked == RankStatus.QUALIFIED and b not in dmca_sets]
     loved = [b for b in beatmapsets if b.ranked == RankStatus.LOVED and b not in dmca_sets]
-    pending = [b for b in beatmapsets if b.ranked == RankStatus.PENDING and b not in dmca_sets]
+    pending = [b for b in beatmapsets if (b.ranked == RankStatus.PENDING or b.ranked == RankStatus.WIP) and b not in dmca_sets]
     graveyard = [b for b in beatmapsets if b.ranked == RankStatus.GRAVEYARD and b not in dmca_sets]
 
     bypass = ranked + loved
