@@ -4,6 +4,7 @@ import os
 
 import discord
 import ossapi
+from ossapi.enums import RankStatus
 from discord import app_commands
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
@@ -54,15 +55,15 @@ async def validate(ctx, u_input: str):
         beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
         artists = set([b.artist for b in beatmapsets])
         dmca_sets = [b for b in beatmapsets if b.availability.download_disabled]
-        relevant_data = []
+        artist_info = []
 
         for a in artists:
             if a in artist_data:
-                relevant_data.append(artist_data[a])
+                artist_info.append(artist_data[a])
             else:
-                relevant_data.append(ArtistData(False, "", a, "unspecified", ""))
+                artist_info.append(ArtistData(False, "", a, "unspecified", ""))
 
-        embed.description = description(relevant_data, dmca_sets)
+        embed.description = description(artist_info, beatmapsets, dmca_sets)
 
         await ctx.response.send_message(embed=embed)
     except ValueError as e:
@@ -77,7 +78,7 @@ async def on_app_command_error(interaction, error):
         await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
 
 
-def description(artist_info: list[ArtistData], dmca_sets: list[Beatmapset] | None) -> str:
+def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dmca_sets: list[Beatmapset] | None) -> str:
     s = ""
 
     if dmca_sets:
@@ -86,44 +87,68 @@ def description(artist_info: list[ArtistData], dmca_sets: list[Beatmapset] | Non
             s += f":warning: :bangbang: [{dmca_set.artist} - {dmca_set.title}](https://osu.ppy.sh/beatmapsets/{dmca_set.id})\n"
 
         s += "\n"
-        
+
+    ranked = [b for b in beatmapsets if b.ranked == RankStatus.RANKED and b not in dmca_sets]
+    qualified = [b for b in beatmapsets if b.ranked == RankStatus.QUALIFIED and b not in dmca_sets]
+    loved = [b for b in beatmapsets if b.ranked == RankStatus.LOVED and b not in dmca_sets]
+    pending = [b for b in beatmapsets if b.ranked == RankStatus.PENDING and b not in dmca_sets]
+    graveyard = [b for b in beatmapsets if b.ranked == RankStatus.GRAVEYARD and b not in dmca_sets]
+
+    bypass = ranked + loved
+    scrutinize = qualified + pending + graveyard
+
     disallowed = [x for x in artist_info if x.status == "false"]
-    allowed = [x for x in artist_info if x.status == "true"]
-    unspecified = [x for x in artist_info if x.status == "unspecified"]
     partial = [x for x in artist_info if x.status == "partial"]
 
-    disallowed.sort(key=lambda x: x.artist)
-    allowed.sort(key=lambda x: x.artist)
-    unspecified.sort(key=lambda x: x.artist)
-    partial.sort(key=lambda x: x.artist)
+    if bypass:
+        s += "__**Ranked/Loved beatmapsets:**__\n"
+        for b in bypass:
+            if b in dmca_sets:
+                continue
 
-    if disallowed:
-        s += "__**Disallowed artists found:**__\n"
-        for dmca_set in disallowed:
-            s += f"❌ {dmca_set.markdown()}\n"
-
-        s += "\n"
-
-    if partial:
-        s += "__**Partially allowed artists found:**__\n"
-        for p in partial:
-            s += f"⚠️{p.markdown()}\n"
+            icon = "💞" if b in loved else "✅"
+            s += f"{icon} [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
 
         s += "\n"
 
-    if unspecified:
-        s += "__**Unspecified artists found:**__\n"
-        for u in unspecified:
-            s += f"❔ {u.markdown()}\n"
+    if scrutinize:
+        found_disallowed = []
+        found_partial = []
 
-        s += "\n"
+        for b in scrutinize:
+            if b in dmca_sets:
+                continue
 
-    if allowed:
-        s += "__**Allowed artists found:**__\n"
-        for a in allowed:
-            s += f"✅ {a.markdown()}\n"
+            if b.artist in disallowed:
+                found_disallowed.append(b)
+            elif b.artist in partial:
+                found_partial.append(b)
 
-        s += "\n"
+        if found_disallowed:
+            s += "__**Disallowed beatmapsets:**__\n"
+            for b in found_disallowed:
+                s += f"❌ [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
+
+            s += "\n"
+
+        elif found_partial:
+            s += "__**Partially disallowed beatmapsets:**__\n"
+            for b in found_partial:
+                partial = [x for x in artist_info if x.artist == b.artist][0]
+                s += f":warning: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id}) ({partial.notes})\n"
+
+            s += "\n"
+
+        remaining = [b for b in scrutinize if b not in found_disallowed and b not in found_partial]
+        if remaining:
+            s += "__**Pending/Graveyard beatmapsets:**__\n"
+            for b in remaining:
+                s += f":ballot_box_with_check: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
+
+            s += "\n"
+
+        if not found_disallowed and not found_partial and not dmca_sets:
+            s += "__**No disallowed beatmapsets found! :partying_face:**__"
 
     return s
 
