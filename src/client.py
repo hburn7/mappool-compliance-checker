@@ -100,6 +100,9 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
     disallowed = [x for x in artist_info if x.status == "false"]
     partial = [x for x in artist_info if x.status == "partial"]
 
+    disallowed_artists = [x.artist for x in disallowed]
+    partial_artists = [x.artist for x in partial]
+
     if bypass:
         s += "__**Ranked/Loved beatmapsets:**__\n"
         for b in bypass:
@@ -123,9 +126,9 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
             if b in dmca_sets:
                 continue
 
-            if b.artist in disallowed:
+            if b.artist in disallowed_artists:
                 found_disallowed.append(b)
-            elif b.artist in partial:
+            elif b.artist in partial_artists:
                 found_partial.append(b)
 
         if found_disallowed:
@@ -138,8 +141,8 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
         elif found_partial:
             s += "__**Partially disallowed beatmapsets:**__\n"
             for b in found_partial:
-                partial = [x for x in artist_info if x.artist == b.artist][0]
-                s += f":warning: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id}) ({partial.notes})\n"
+                found_p = [x for x in artist_info if x.artist == b.artist][0]
+                s += f":warning: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id}) ({found_p.notes})\n"
 
             s += "\n"
 
