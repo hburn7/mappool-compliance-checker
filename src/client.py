@@ -6,9 +6,9 @@ import discord
 import ossapi
 from ossapi.enums import RankStatus
 from discord import app_commands
+from discord.ext.commands import Context
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
-
 from validator import artist_data, ArtistData
 
 intents = discord.Intents.default()
@@ -35,17 +35,17 @@ async def on_ready():
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
 @app_commands.checks.cooldown(10, 45)
-async def validate(ctx, u_input: str):
+async def validate(ctx: discord.Interaction, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
-    await ctx.response.defer()
+    await ctx.response.defer()  # For interactions, use ctx.response.defer()
     map_ids = sanitize(u_input)
 
     if len(map_ids) > 200:
-        await ctx.response.send_message('Too many map IDs provided.')
+        await ctx.followup.send('Too many map IDs provided.')  # Use followup after deferring
         return
 
     if not map_ids:
-        await ctx.response.send_message('Invalid input (map id collection empty).')
+        await ctx.followup.send('Invalid input (map id collection empty).')
         return
 
     embed = discord.Embed()
@@ -66,10 +66,10 @@ async def validate(ctx, u_input: str):
 
         embed.description = description(artist_info, beatmapsets, dmca_sets)
 
-        await ctx.response.send_message(embed=embed)
+        await ctx.followup.send(embed=embed)
     except ValueError as e:
         logger.warning(f'Invalid input [{e}].')
-        await ctx.response.send_message(f'Invalid input [{e}].')
+        await ctx.followup.send(f'Invalid input [{e}].')
         return
 
 
