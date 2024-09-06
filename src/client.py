@@ -37,9 +37,10 @@ async def on_ready():
 @app_commands.checks.cooldown(10, 45)
 async def validate(ctx, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
+    await ctx.response.defer()
     map_ids = sanitize(u_input)
 
-    if len(map_ids) > 100:
+    if len(map_ids) > 200:
         await ctx.response.send_message('Too many map IDs provided.')
         return
 
