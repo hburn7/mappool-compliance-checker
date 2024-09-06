@@ -198,14 +198,18 @@ async def fetch_beatmapsets(ids: set[int]) -> (list[ossapi.Beatmapset], list[int
     :param ids: A set of beatmap ids
 
     :return: A tuple containing a list of beatmapsets and a list of ids which were not found"""
-    beatmaps = await oss_client.beatmaps(list(ids))
-    returned_beatmapset_ids = set([b.beatmapset_id for b in beatmaps])
+    # Split ids into batches of 30 maps
+    id_sets = [list(ids)[i:i + 30] for i in range(0, len(ids), 30)]
+    beatmaps = []
 
+    for set_ in id_sets:
+        beatmaps += await oss_client.beatmaps(list(set(set_)))
+
+    returned_beatmapset_ids = set([b.beatmapset_id for b in beatmaps])
     all_ids = returned_beatmapset_ids | set([b.id for b in beatmaps])
 
     # Find beatmapsets of any ids which were not found here
     error_ids = ids - all_ids
-
     return [b.beatmapset() for b in beatmaps], error_ids
 
 
