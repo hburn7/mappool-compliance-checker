@@ -55,7 +55,7 @@ async def validate(ctx: discord.Interaction, u_input: str):
     try:
         beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
         artists = set([b.artist for b in beatmapsets])
-        dmca_sets = [b for b in beatmapsets if b.availability.download_disabled]
+        dmca_sets = [b for b in beatmapsets if b.availability.download_disabled or b.availability.more_information]
         artist_info = []
 
         for a in artists:
