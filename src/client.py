@@ -104,20 +104,7 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
     disallowed_artists = [x.artist for x in disallowed]
     partial_artists = [x.artist for x in partial]
 
-    if bypass:
-        s += "__**Ranked/Loved beatmapsets:**__\n"
-        for b in bypass:
-            if b in dmca_sets:
-                continue
-
-            icon = "💞" if b in loved else "✅"
-            s += f"{icon} [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
-
-            if len(s) > 1300:
-                s += f":fast_forward: ... [truncated {len(bypass) - bypass.index(b)} beatmapsets]\n"
-                break
-
-        s += "\n"
+    scrutinize_pass = False
 
     if scrutinize:
         found_disallowed = []
@@ -160,7 +147,23 @@ def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dm
             s += "\n"
 
         if not found_disallowed and not found_partial and not dmca_sets:
-            s += "__**No disallowed beatmapsets found! :partying_face:**__"
+            scrutinize_pass = True
+    if bypass:
+        s += "__**Ranked/Loved beatmapsets:**__\n"
+        for b in bypass:
+            if b in dmca_sets:
+                continue
+
+            icon = "💞" if b in loved else "✅"
+            s += f"{icon} [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
+
+            if len(s) > 1300:
+                s += f":fast_forward: ... [truncated {len(bypass) - bypass.index(b)} beatmapsets]\n"
+                break
+
+        s += "\n"
+    if not dmca_sets and (not scrutinize or scrutinize_pass):
+        s += "__**No disallowed beatmapsets found! :partying_face:**__"
 
     return s
 
