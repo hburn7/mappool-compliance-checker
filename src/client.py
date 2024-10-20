@@ -5,7 +5,6 @@ import os
 import discord
 import ossapi
 from discord import app_commands, Embed
-from discord.embeds import EmbedProxy
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
 from ossapi.enums import RankStatus
@@ -49,7 +48,14 @@ def line_item_disallowed(beatmapset: Beatmapset) -> str:
     return f"❌ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
 def line_item_partial(beatmapset: Beatmapset) -> str:
-    return f":warning: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
+    key = validator.flag_key_match(beatmapset.artist)
+    notes = validator.flagged_artists[key].notes if key is not None else None
+    s = f":warning: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
+
+    if notes is not None:
+        s += f" - {notes}"
+
+    return s
 
 def line_item_allowed_unranked(beatmapset: Beatmapset) -> str:
     return f":ballot_box_with_check: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
@@ -60,7 +66,7 @@ def line_item_allowed_ranked(beatmapset: Beatmapset) -> str:
 def line_item_allowed_loved(beatmapset: Beatmapset) -> str:
     return f"💞 [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-def embeds_from_line_items(title, line_items: list[str], color: discord.Color, n_embeds: int) -> list[Embed]:
+def embeds_from_line_items(title, line_items: list[str], color: discord.Color) -> list[Embed]:
     embeds = []
     for i in range(0, len(line_items), PAGE_SIZE):
         embed = discord.Embed(title=title, color=color)
@@ -75,29 +81,29 @@ def page_count(n: int) -> int:
 
 def dmca_sets_embeds(dmca: list[Beatmapset]) -> list[Embed]:
     line_items = [line_item_dmca(b) for b in dmca]
-    return embeds_from_line_items("DMCA'd beatmapsets found", line_items, discord.Color.red(), page_count(len(line_items)))
+    return embeds_from_line_items("DMCA'd beatmapsets found", line_items, discord.Color.red())
 
 def disallowed_sets_embeds(disallowed: list[Beatmapset]) -> list[Embed]:
     line_items = [line_item_disallowed(b) for b in disallowed]
-    return embeds_from_line_items("Disallowed beatmapsets found", line_items, discord.Color.red(), page_count(len(line_items)))
+    return embeds_from_line_items("Disallowed beatmapsets found", line_items, discord.Color.red())
 
 def partial_sets_embeds(partial: list[Beatmapset]) -> list[Embed]:
     line_items = [line_item_partial(b) for b in partial]
-    return embeds_from_line_items("Partially disallowed beatmapsets found", line_items, discord.Color.yellow(), page_count(len(line_items)))
+    return embeds_from_line_items("Partially disallowed beatmapsets found", line_items, discord.Color.yellow())
 
 def allowed_graveyard_sets_embeds(graveyard: list[Beatmapset]) -> list[Embed]:
     line_items = [line_item_allowed_unranked(b) for b in graveyard]
-    return embeds_from_line_items("Pending/Graveyard beatmapsets found", line_items, discord.Color.blurple(), page_count(len(line_items)))
+    return embeds_from_line_items("Pending/Graveyard beatmapsets found", line_items, discord.Color.blurple())
 
 def ranked_sets_embeds(ranked: list[Beatmapset]) -> list[Embed]:
     line_items = [line_item_allowed_loved(b) if b.status == RankStatus.LOVED else line_item_allowed_ranked(b) for b in ranked]
-    return embeds_from_line_items("Ranked/Loved beatmapsets found", line_items, discord.Color.green(), page_count(len(line_items)))
+    return embeds_from_line_items("Ranked/Loved beatmapsets found", line_items, discord.Color.green())
 
 def dmca_sets(beatmapsets: list[Beatmapset]) -> list[Beatmapset]:
     return [b for b in beatmapsets if b.availability.more_information is not None or b.availability.download_disabled]
 
 def count_graveyard(beatmapsets: list[Beatmapset]) -> int:
-    return len([b for b in beatmapsets if b.status == RankStatus.PENDING or b.status == RankStatus.GRAVEYARD])
+    return len([b for b in beatmapsets if b.status not in [RankStatus.RANKED, RankStatus.LOVED, RankStatus.APPROVED]])
 
 def count_ranked(beatmapsets: list[Beatmapset]) -> int:
     return len([b for b in beatmapsets if b.status == RankStatus.RANKED or b.status == RankStatus.LOVED or b.status == RankStatus.APPROVED])
