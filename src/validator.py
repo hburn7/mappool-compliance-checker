@@ -1,76 +1,107 @@
+from pathlib import Path
 from dataclasses import dataclass
 
-file_path = 'data.txt'
+import json
 
+from ossapi import Beatmapset
+from ossapi.enums import RankStatus
+
+PARTIAL_STATUS = 'partial'
+DISALLOWED_STATUS = 'disallowed'
 
 @dataclass
-class ArtistData:
-    fa: bool
-    fa_url: str
-    artist: str
-    status: str
-    notes: str
+class FlaggedArtistData:
+    status: str # Either 'partial' or 'disallowed'
+    notes: str | None
 
-    def markdown(self):
-        s = ""
-        if self.fa:
-            s += f"[{self.artist}]({self.fa_url})"
-        else:
-            s += self.artist
+path = Path('./flagged.json')
 
-        if self.status == "partial":
-            s += f" ({self.notes})"
-
-        return s
-
-    def __repr__(self):
-        return f"ArtistData(fa={self.fa}, fa_url={self.fa_url}, artist={self.artist}, status={self.status}, notes={self.notes})"
-
-
-def parse_osu_rules() -> dict[str, ArtistData]:
-    # Read the file content
-    with open(file_path, 'r', encoding='utf-8') as file:
-        content = file.read()
-        data = identify_artists(content)
-        return {a.artist: a for a in data}
-
-
-def identify_artists(content: str) -> list[ArtistData]:
-    r = []
-
-    for line in content.splitlines():
-        data = ArtistData(fa=False, fa_url="", artist="", status="", notes="")
-
-        sections = line.split('|')[1::]
-
-        # If the first section has a url, this is a featured artist.
-        if 'https://osu.ppy.sh/beatmaps/artists/' in sections[0]:
-            data.fa = True
-
-            # Append the id to the artist url
-            data.fa_url = "https://osu.ppy.sh/beatmaps/artists/" + \
-                          sections[0].split('https://osu.ppy.sh/beatmaps/artists/')[1].split(')')[0].strip()
-            data.artist = sections[1].strip().split('[')[1].split(']')[0]
-            data.status = "true" if "true" in sections[2] else "partial"
-
-            if data.status == "partial":
-                data.notes = sections[3].strip()
-        else:
-            # Not a featured artist, artist name is in this section
-            if sections[0].strip() == "":
-                data.artist = sections[1].strip()
-            else:
-                data.artist = sections[0].strip()
-            data.status = "false"
-
-        data.artist = data.artist.replace("\\", "")
-        r.append(data)
-
-    return r
-
-
-artist_data = None
+flagged_artists = {} # dict -> artist: FlaggedArtistData
 
 # We only want to parse this once to save resources
-if artist_data is None:
-    artist_data = parse_osu_rules()
+if len(flagged_artists) == 0:
+    with open(path, 'r') as file:
+        flagged_artists = dict(json.load(file))
+
+        for k in flagged_artists:
+            flagged_artists[k] = FlaggedArtistData(**flagged_artists[k])
+
+def is_dmca(beatmapset: Beatmapset) -> bool:
+    return beatmapset.availability.download_disabled or \
+        beatmapset.availability.more_information is not None
+
+def is_licensed(track_id: int | None) -> bool:
+    return track_id is not None
+
+def is_status_approved(status: RankStatus) -> bool:
+    return status == RankStatus.RANKED or \
+        status == RankStatus.APPROVED or \
+        status == RankStatus.LOVED
+
+def flag_key_match(artist: str) -> str | None:
+    """
+    If a partial key matches (e.g. the beatmapset artist is
+    'Igorrr vs. Camellia' and the flagged artist is 'Igorrr'),
+    return the flagged artist. Otherwise, return None.
+    """
+    keys = flagged_artists.keys()
+    for key in keys:
+        if key.lower() in artist.lower():
+            return key
+
+    return None
+
+def artist_flagged(artist: str) -> bool:
+    if artist in flagged_artists:
+        return True
+
+    return flag_key_match(artist) is not None
+
+def is_partial(beatmapset: Beatmapset) -> bool:
+    if is_allowed(beatmapset):
+        return False
+
+    artist = beatmapset.artist
+
+    if not artist_flagged(artist):
+        return False
+
+    key = flag_key_match(artist)
+    if key is not None:
+        return flagged_artists[key].status == PARTIAL_STATUS
+
+    return False
+
+def is_allowed(beatmapset: Beatmapset):
+    """
+    Determines whether a beatmapset is allowed according to the current
+    content usage permissions rules.
+
+    Rules:
+    0. The beatmap cannot have any DMCA notices at all.
+    1. If the beatmap is ranked, approved, or loved, it is allowed.
+    2. If the track is licensed, it is allowed.
+    3. If the beatmap is neither of those and the artist is not in our
+    disallowed / partial list, it is allowed. To be on the safe side,
+    i.e. in the case of gray-area collabs,
+    """
+    if is_dmca(beatmapset):
+        return False
+
+    if is_licensed(beatmapset.track_id) or is_status_approved(beatmapset.status):
+        return True
+
+    return not artist_flagged(beatmapset.artist)
+
+def is_disallowed(beatmapset: Beatmapset) -> bool:
+    if is_allowed(beatmapset):
+        return False
+
+    if not artist_flagged(beatmapset.artist):
+        return False
+
+    key = flag_key_match(beatmapset.artist)
+    if key is not None:
+        return flagged_artists[key].status == DISALLOWED_STATUS
+
+    return False
