@@ -10,7 +10,7 @@ from ossapi import OssapiAsync, Beatmapset
 from ossapi.enums import RankStatus
 from reactionmenu import ViewMenu, ViewButton
 
-from src import validator
+import validator
 
 intents = discord.Intents.default()
 intents.messages = True
