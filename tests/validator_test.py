@@ -1,21 +1,22 @@
 from src import validator
 
-def test_fa_recognition():
-    s = "| [![][FA]](https://osu.ppy.sh/beatmaps/artists/180) | [Fred V & Grafix](https://osu.ppy.sh/beatmaps/artists/180) | ![][true] |"
-    res = validator.identify_artists(s)[0]
+def test_artist_flagged():
+    artist = 'Igorrr'
+    assert(validator.artist_flagged(artist))
 
-    assert res.fa == True
-    assert res.fa_url == "https://osu.ppy.sh/beatmaps/artists/180"
-    assert res.artist == "Fred V & Grafix"
-    assert res.status == "true"
-    assert res.notes == ""
+def test_artist_flagged_case_insensitive():
+    artist = 'IgOrRr'
+    assert(validator.artist_flagged(artist))
 
-def test_no_fa_artist_recognition():
-    s = "| ak+q | ![][false] |"
-    res = validator.identify_artists(s)[0]
+def test_artist_flagged_collab():
+    artist = 'igorrr vs. Camellia'
+    assert(validator.artist_flagged(artist))
 
-    assert res.fa == False
-    assert res.fa_url == ""
-    assert res.artist == "ak+q"
-    assert res.status == "false"
-    assert res.notes == ""
+def test_is_licensed():
+    track_id = 1234
+    assert(validator.is_licensed(track_id))
+
+def test_is_not_licensed():
+    track_id = None
+    assert(validator.is_licensed(track_id) == False)
+

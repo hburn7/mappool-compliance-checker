@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext.commands import Context
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
-from validator import artist_data, ArtistData
+from validator import flagged_artists, ArtistData
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -59,8 +59,8 @@ async def validate(ctx: discord.Interaction, u_input: str):
         artist_info = []
 
         for a in artists:
-            if a in artist_data:
-                artist_info.append(artist_data[a])
+            if a in flagged_artists:
+                artist_info.append(flagged_artists[a])
             else:
                 artist_info.append(ArtistData(False, "", a, "unspecified", ""))
 

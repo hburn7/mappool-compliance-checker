@@ -1,107 +1,86 @@
-[
-  {
-    "artist": "a_hisa",
+{
+  "a_hisa": {
     "status": "partial",
     "notes": "Contact before uploading. Can be reached via email or Bandcamp."
   },
-  {
-    "artist": "Akira Complex",
+  "Akira Complex": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "HoneyComeBear",
+  "HoneyComeBear": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "Jun Kuroda",
+  "Jun Kuroda": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "Morimori Atsushi",
+  "Morimori Atsushi": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "Synthion",
+  "Synthion": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "Yuyoyuppe",
+  "Yuyoyuppe": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "DJ'TEKINA//SOMETHING",
+  "DJ'TEKINA//SOMETHING": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "Zekk",
+  "Zekk": {
     "status": "partial",
     "notes": "Do not use or upload tracks that are not available on the creator's Featured Artist listing."
   },
-  {
-    "artist": "40mP",
+  "40mP": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "ak+q",
+  "ak+q": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "DJMax",
+  "DJMax": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "Neowiz",
+  "Neowiz": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "Draw the Emotional",
+  "Draw the Emotional": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "Enter Shikari",
+  "Enter Shikari": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "EZFG",
+  "EZFG": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "Hatsuki Yura",
+  "Hatsuki Yura": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "Igorrr",
+  "Igorrr": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "kamome sano",
+  "kamome sano": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "Kozato",
+  "Kozato": {
     "status": "disallowed",
     "notes": null
   },
-  {
-    "artist": "NOMA",
+  "NOMA": {
     "status": "disallowed",
     "notes": null
   }
-]
+}
