@@ -4,12 +4,12 @@ import os
 
 import discord
 import ossapi
-from ossapi.enums import RankStatus
 from discord import app_commands
-from discord.ext.commands import Context
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
-from validator import flagged_artists, ArtistData
+from ossapi.enums import RankStatus
+
+from src import validator
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -33,137 +33,89 @@ async def on_ready():
     logger.info('Commands synced, bot is ready!')
 
 
-@tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
-@app_commands.checks.cooldown(10, 45)
-async def validate(ctx: discord.Interaction, u_input: str):
-    """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
-    await ctx.response.defer()  # For interactions, use ctx.response.defer()
-    map_ids = sanitize(u_input)
+def line_item_dmca(beatmapset: Beatmapset) -> str:
+    return f":warning: :bangbang: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-    if len(map_ids) > 200:
-        await ctx.followup.send('Too many map IDs provided.')  # Use followup after deferring
-        return
+def line_item_disallowed(beatmapset: Beatmapset) -> str:
+    return f"❌ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-    if not map_ids:
-        await ctx.followup.send('Invalid input (map id collection empty).')
-        return
+def line_item_partial(beatmapset: Beatmapset) -> str:
+    return f":warning: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-    embed = discord.Embed()
-    embed.colour = discord.Colour.blurple()
-    embed.title = "Mappool verification result"
+def line_item_allowed_unranked(beatmapset: Beatmapset) -> str:
+    return f":ballot_box_with_check: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-    try:
-        beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
-        artists = set([b.artist for b in beatmapsets])
-        dmca_sets = [b for b in beatmapsets if b.availability.download_disabled or b.availability.more_information]
-        artist_info = []
+def line_item_allowed_ranked(beatmapset: Beatmapset) -> str:
+    return f"✅ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-        for a in artists:
-            if a in flagged_artists:
-                artist_info.append(flagged_artists[a])
-            else:
-                artist_info.append(ArtistData(False, "", a, "unspecified", ""))
+def line_item_allowed_loved(beatmapset: Beatmapset) -> str:
+    return f"💞 [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-        embed.description = description(artist_info, beatmapsets, dmca_sets)
+def dmca_sets_description(dmca_sets: list[Beatmapset]) -> str:
+    return "__**DMCA'd beatmapsets found:**__\n" + '\n'.join([line_item_dmca(b) for b in dmca_sets]) + '\n\n'
 
-        await ctx.followup.send(embed=embed)
-    except ValueError as e:
-        logger.warning(f'Invalid input [{e}].')
-        await ctx.followup.send(f'Invalid input [{e}].')
-        return
+def disallowed_sets_description(disallowed_sets: list[Beatmapset]) -> str:
+    return "__**Disallowed beatmapsets:**__\n" + '\n'.join([line_item_disallowed(b) for b in disallowed_sets]) + '\n\n'
 
+def partial_sets_description(partial_sets: list[Beatmapset]) -> str:
+    return "__**Partially disallowed beatmapsets:**__\n" + '\n'.join([line_item_partial(b) for b in partial_sets]) + '\n\n'
 
-@tree.error
-async def on_app_command_error(interaction, error):
-    if isinstance(error, app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+def allowed_graveyard_sets_description(graveyard_sets: list[Beatmapset]) -> str:
+    return "__**Pending/Graveyard beatmapsets:**__\n" + '\n'.join([line_item_allowed_unranked(b) for b in graveyard_sets]) + '\n\n'
 
+def ranked_sets_description(ranked_sets: list[Beatmapset]) -> str:
+    return "__**Ranked/Loved beatmapsets:**__\n" + '\n'.join([line_item_allowed_loved(b) if b.status == RankStatus.LOVED else line_item_allowed_ranked(b) for b in ranked_sets]) + '\n\n'
 
-def description(artist_info: list[ArtistData], beatmapsets: list[Beatmapset], dmca_sets: list[Beatmapset] | None) -> str:
+def dmca_sets(beatmapsets: list[Beatmapset]) -> list[Beatmapset]:
+    return [b for b in beatmapsets if b.availability.more_information is not None or b.availability.download_disabled]
+
+def count_graveyard(beatmapsets: list[Beatmapset]) -> int:
+    return len([b for b in beatmapsets if b.status == RankStatus.PENDING or b.status == RankStatus.GRAVEYARD])
+
+def count_ranked(beatmapsets: list[Beatmapset]) -> int:
+    return len([b for b in beatmapsets if b.status == RankStatus.RANKED or b.status == RankStatus.LOVED or b.status == RankStatus.APPROVED])
+
+def count_allowed(beatmapsets: list[Beatmapset]) -> int:
+    return len([b for b in beatmapsets if validator.is_allowed(b)])
+
+def count_disallowed(beatmapsets: list[Beatmapset]) -> int:
+    return len([b for b in beatmapsets if not validator.is_allowed(b)])
+
+def count_partial(beatmapsets: list[Beatmapset]) -> int:
+    return len([b for b in beatmapsets if validator.is_partial(b)])
+
+def count_dmca(beatmapsets: list[Beatmapset]) -> int:
+    return len(dmca_sets(beatmapsets))
+
+def description(beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> str:
+    allowed = [b for b in beatmapsets if validator.is_allowed(b)]
+    partial = [b for b in beatmapsets if validator.is_partial(b)]
+    disallowed = [b for b in beatmapsets if validator.is_disallowed(b)]
+
+    graveyard = [b for b in allowed if b.status == RankStatus.PENDING or b.status == RankStatus.GRAVEYARD]
+    ranked = [b for b in allowed if b.status == RankStatus.RANKED or b.status == RankStatus.LOVED or b.status == RankStatus.APPROVED]
+
+    dmca_count = count_dmca(beatmapsets)
+    disallowed_count = count_disallowed(disallowed)
+    partial_count = count_partial(partial)
+    ranked_count = count_ranked(allowed)
+    graveyard_count = count_graveyard(allowed)
+
     s = ""
+    if dmca_count > 0:
+        s += dmca_sets_description(dmca)
 
-    if dmca_sets:
-        s += "__**DMCA'd beatmapsets found:**__\n"
-        for dmca_set in dmca_sets:
-            s += f":warning: :bangbang: [{dmca_set.artist} - {dmca_set.title}](https://osu.ppy.sh/beatmapsets/{dmca_set.id})\n"
+    if disallowed_count > 0:
+        s += disallowed_sets_description(disallowed)
 
-        s += "\n"
+    if partial_count > 0:
+        s += partial_sets_description(partial)
 
-    ranked = [b for b in beatmapsets if (b.ranked == RankStatus.RANKED or b.ranked == RankStatus.APPROVED) and b not in dmca_sets]
-    qualified = [b for b in beatmapsets if b.ranked == RankStatus.QUALIFIED and b not in dmca_sets]
-    loved = [b for b in beatmapsets if b.ranked == RankStatus.LOVED and b not in dmca_sets]
-    pending = [b for b in beatmapsets if (b.ranked == RankStatus.PENDING or b.ranked == RankStatus.WIP) and b not in dmca_sets]
-    graveyard = [b for b in beatmapsets if b.ranked == RankStatus.GRAVEYARD and b not in dmca_sets]
+    if graveyard_count > 0:
+        s += allowed_graveyard_sets_description(graveyard)
 
-    bypass = ranked + loved
-    scrutinize = qualified + pending + graveyard
-
-    disallowed = [x for x in artist_info if x.status == "false"]
-    partial = [x for x in artist_info if x.status == "partial"]
-
-    disallowed_artists = [x.artist for x in disallowed]
-    partial_artists = [x.artist for x in partial]
-
-    scrutinize_pass = False
-
-    if scrutinize:
-        found_disallowed = []
-        found_partial = []
-
-        for b in scrutinize:
-            if b in dmca_sets:
-                continue
-
-            if b.artist in disallowed_artists:
-                found_disallowed.append(b)
-            elif b.artist in partial_artists:
-                found_partial.append(b)
-
-        if found_disallowed:
-            s += "__**Disallowed beatmapsets:**__\n"
-            for b in found_disallowed:
-                s += f"❌ [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
-
-            s += "\n"
-
-        elif found_partial:
-            s += "__**Partially disallowed beatmapsets:**__\n"
-            for b in found_partial:
-                found_p = [x for x in artist_info if x.artist == b.artist][0]
-                s += f":warning: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id}) ({found_p.notes})\n"
-
-            s += "\n"
-
-        remaining = [b for b in scrutinize if b not in found_disallowed and b not in found_partial]
-        if remaining:
-            s += "__**Pending/Graveyard beatmapsets:**__\n"
-            for b in remaining:
-                if len(s) > 1700:
-                    s += f":fast_forward: ... [truncated {len(remaining) - remaining.index(b)} beatmapsets]\n"
-                    break
-
-                s += f":ballot_box_with_check: [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
-
-            s += "\n"
-
-        if not found_disallowed and not found_partial and not dmca_sets:
-            scrutinize_pass = True
-    if bypass:
-        s += "__**Ranked/Loved beatmapsets:**__\n"
-        for b in bypass:
-            if b in dmca_sets:
-                continue
-
-            icon = "💞" if b in loved else "✅"
-            s += f"{icon} [{b.artist} - {b.title}](https://osu.ppy.sh/beatmapsets/{b.id})\n"
-
-            if len(s) > 1300:
-                s += f":fast_forward: ... [truncated {len(bypass) - bypass.index(b)} beatmapsets]\n"
-                break
-
-        s += "\n"
-    if not dmca_sets and (not scrutinize or scrutinize_pass):
-        s += "__**No disallowed beatmapsets found! :partying_face:**__"
+    if ranked_count > 0:
+        s += ranked_sets_description(ranked)
 
     return s
 
@@ -242,3 +194,41 @@ def run():
 
     token = os.getenv('TOKEN')
     client.run(token, log_handler=None)
+
+
+@tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
+@app_commands.checks.cooldown(10, 45)
+async def validate(ctx: discord.Interaction, u_input: str):
+    """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
+    await ctx.response.defer()  # For interactions, use ctx.response.defer()
+    map_ids = sanitize(u_input)
+
+    if len(map_ids) > 200:
+        await ctx.followup.send('Too many map IDs provided.')  # Use followup after deferring
+        return
+
+    if not map_ids:
+        await ctx.followup.send('Invalid input (map id collection empty).')
+        return
+
+    embed = discord.Embed()
+    embed.colour = discord.Colour.blurple()
+    embed.title = "Mappool verification result"
+
+    try:
+        beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
+        dmca = dmca_sets(beatmapsets)
+
+        embed.description = description(beatmapsets, dmca)
+
+        await ctx.followup.send(embed=embed)
+    except ValueError as e:
+        logger.warning(f'Invalid input [{e}].')
+        await ctx.followup.send(f'Invalid input [{e}].')
+        return
+
+
+@tree.error
+async def on_app_command_error(interaction, error):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
