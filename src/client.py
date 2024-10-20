@@ -5,6 +5,7 @@ import os
 import discord
 import ossapi
 from discord import app_commands, Embed
+from discord.embeds import EmbedProxy
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
 from ossapi.enums import RankStatus
@@ -42,7 +43,7 @@ async def on_ready():
 
 
 def line_item_dmca(beatmapset: Beatmapset) -> str:
-    return f":warning: :bangbang: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
+    return f"⛔ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
 def line_item_disallowed(beatmapset: Beatmapset) -> str:
     return f"❌ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
@@ -114,12 +115,12 @@ def count_dmca(beatmapsets: list[Beatmapset]) -> int:
     return len(dmca_sets(beatmapsets))
 
 def menu(interaction: discord.Interaction, beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> ViewMenu:
-    allowed = [b for b in beatmapsets if validator.is_allowed(b)]
+    allowed = sorted([b for b in beatmapsets if validator.is_allowed(b)], key=lambda b: b.artist)
     partial = [b for b in beatmapsets if validator.is_partial(b)]
     disallowed = [b for b in beatmapsets if validator.is_disallowed(b)]
 
-    graveyard = [b for b in allowed if b.status == RankStatus.PENDING or b.status == RankStatus.GRAVEYARD]
     ranked = [b for b in allowed if b.status == RankStatus.RANKED or b.status == RankStatus.LOVED or b.status == RankStatus.APPROVED]
+    graveyard = [b for b in allowed if b not in ranked]
 
     dmca_count = count_dmca(beatmapsets)
     disallowed_count = count_disallowed(disallowed)
@@ -144,6 +145,10 @@ def menu(interaction: discord.Interaction, beatmapsets: list[Beatmapset], dmca: 
 
     if ranked_count > 0:
         pages += ranked_sets_embeds(ranked)
+
+    for page in pages:
+        page.set_footer(text='️⛔: %d | ❌: %d | ⚠️%d | ☑️: %d | ✅ / 💞: %d' %
+                             (dmca_count, disallowed_count, partial_count, graveyard_count, ranked_count))
 
     view_menu.add_pages(pages)
     view_menu.add_button(ViewButton.back())
@@ -245,6 +250,7 @@ async def validate(ctx: discord.Interaction, u_input: str):
 
     try:
         beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
+        beatmapsets = list(sorted(beatmapsets, key=lambda b: b.artist))
         dmca = dmca_sets(beatmapsets)
 
         view_menu = menu(ctx, beatmapsets, dmca)
