@@ -30,6 +30,8 @@ oss_client = OssapiAsync(client_id, client_secret)
 
 logger = logging.getLogger('client')
 
+PAGE_SIZE = 25
+
 
 @client.event
 async def on_ready():
@@ -59,16 +61,16 @@ def line_item_allowed_loved(beatmapset: Beatmapset) -> str:
 
 def embeds_from_line_items(title, line_items: list[str], color: discord.Color, n_embeds: int) -> list[Embed]:
     embeds = []
-    for i in range(0, len(line_items), n_embeds):
+    for i in range(0, len(line_items), PAGE_SIZE):
         embed = discord.Embed(title=title, color=color)
-        embed.description = '\n'.join(line_items[i:i + n_embeds])
+        embed.description = '\n'.join(line_items[i:i + PAGE_SIZE])
         embeds.append(embed)
 
     return embeds
 
 def page_count(n: int) -> int:
-    # 1 page per 25 items
-    return n // 25 + 1
+    # 1 page per PAGE_SIZE items
+    return n // PAGE_SIZE + 1
 
 def dmca_sets_embeds(dmca: list[Beatmapset]) -> list[Embed]:
     line_items = [line_item_dmca(b) for b in dmca]
