@@ -6,10 +6,11 @@ import json
 from ossapi import Beatmapset
 from ossapi.enums import RankStatus
 
+PARTIAL_STATUS = 'partial'
+DISALLOWED_STATUS = 'disallowed'
 
 @dataclass
 class FlaggedArtistData:
-    artist: str
     status: str # Either 'partial' or 'disallowed'
     notes: str | None
 
@@ -22,6 +23,8 @@ if len(flagged_artists) == 0:
     with open(path, 'r') as file:
         flagged_artists = dict(json.load(file))
 
+        for k in flagged_artists:
+            flagged_artists[k] = FlaggedArtistData(**flagged_artists[k])
 
 def is_dmca(beatmapset: Beatmapset) -> bool:
     return beatmapset.availability.download_disabled or \
@@ -35,15 +38,37 @@ def is_status_approved(status: RankStatus) -> bool:
         status == RankStatus.APPROVED or \
         status == RankStatus.LOVED
 
+def flag_key_match(artist: str) -> str | None:
+    """
+    If a partial key matches (e.g. the beatmapset artist is
+    'Igorrr vs. Camellia' and the flagged artist is 'Igorrr'),
+    return the flagged artist. Otherwise, return None.
+    """
+    keys = flagged_artists.keys()
+    for key in keys:
+        if key.lower() in artist.lower():
+            return key
+
+    return None
+
 def artist_flagged(artist: str) -> bool:
     if artist in flagged_artists:
         return True
 
-    lower = artist.lower()
-    keys = [f.lower() for f in flagged_artists.keys()]
-    for k in keys:
-        if k in lower:
-            return True
+    return flag_key_match(artist) is not None
+
+def is_partial(beatmapset: Beatmapset) -> bool:
+    if is_allowed(beatmapset):
+        return False
+
+    artist = beatmapset.artist
+
+    if not artist_flagged(artist):
+        return False
+
+    key = flag_key_match(artist)
+    if key is not None:
+        return flagged_artists[key].status == PARTIAL_STATUS
 
     return False
 
@@ -68,3 +93,15 @@ def is_allowed(beatmapset: Beatmapset):
 
     return not artist_flagged(beatmapset.artist)
 
+def is_disallowed(beatmapset: Beatmapset) -> bool:
+    if is_allowed(beatmapset):
+        return False
+
+    if not artist_flagged(beatmapset.artist):
+        return False
+
+    key = flag_key_match(beatmapset.artist)
+    if key is not None:
+        return flagged_artists[key].status == DISALLOWED_STATUS
+
+    return False
