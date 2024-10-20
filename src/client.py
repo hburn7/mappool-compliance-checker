@@ -4,14 +4,20 @@ import os
 
 import discord
 import ossapi
-from discord import app_commands
+from discord import app_commands, Embed
 from dotenv import load_dotenv
 from ossapi import OssapiAsync, Beatmapset
 from ossapi.enums import RankStatus
+from reactionmenu import ViewMenu, ViewButton
 
 from src import validator
 
 intents = discord.Intents.default()
+intents.messages = True
+intents.guilds = True
+intents.reactions = True
+intents.members = True
+
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
@@ -51,20 +57,38 @@ def line_item_allowed_ranked(beatmapset: Beatmapset) -> str:
 def line_item_allowed_loved(beatmapset: Beatmapset) -> str:
     return f"💞 [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
-def dmca_sets_description(dmca_sets: list[Beatmapset]) -> str:
-    return "__**DMCA'd beatmapsets found:**__\n" + '\n'.join([line_item_dmca(b) for b in dmca_sets]) + '\n\n'
+def embeds_from_line_items(title, line_items: list[str], color: discord.Color, n_embeds: int) -> list[Embed]:
+    embeds = []
+    for i in range(0, len(line_items), n_embeds):
+        embed = discord.Embed(title=title, color=color)
+        embed.description = '\n'.join(line_items[i:i + n_embeds])
+        embeds.append(embed)
 
-def disallowed_sets_description(disallowed_sets: list[Beatmapset]) -> str:
-    return "__**Disallowed beatmapsets:**__\n" + '\n'.join([line_item_disallowed(b) for b in disallowed_sets]) + '\n\n'
+    return embeds
 
-def partial_sets_description(partial_sets: list[Beatmapset]) -> str:
-    return "__**Partially disallowed beatmapsets:**__\n" + '\n'.join([line_item_partial(b) for b in partial_sets]) + '\n\n'
+def page_count(n: int) -> int:
+    # 1 page per 25 items
+    return n // 25 + 1
 
-def allowed_graveyard_sets_description(graveyard_sets: list[Beatmapset]) -> str:
-    return "__**Pending/Graveyard beatmapsets:**__\n" + '\n'.join([line_item_allowed_unranked(b) for b in graveyard_sets]) + '\n\n'
+def dmca_sets_embeds(dmca: list[Beatmapset]) -> list[Embed]:
+    line_items = [line_item_dmca(b) for b in dmca]
+    return embeds_from_line_items("DMCA'd beatmapsets found", line_items, discord.Color.red(), page_count(len(line_items)))
 
-def ranked_sets_description(ranked_sets: list[Beatmapset]) -> str:
-    return "__**Ranked/Loved beatmapsets:**__\n" + '\n'.join([line_item_allowed_loved(b) if b.status == RankStatus.LOVED else line_item_allowed_ranked(b) for b in ranked_sets]) + '\n\n'
+def disallowed_sets_embeds(disallowed: list[Beatmapset]) -> list[Embed]:
+    line_items = [line_item_disallowed(b) for b in disallowed]
+    return embeds_from_line_items("Disallowed beatmapsets found", line_items, discord.Color.red(), page_count(len(line_items)))
+
+def partial_sets_embeds(partial: list[Beatmapset]) -> list[Embed]:
+    line_items = [line_item_partial(b) for b in partial]
+    return embeds_from_line_items("Partially disallowed beatmapsets found", line_items, discord.Color.yellow(), page_count(len(line_items)))
+
+def allowed_graveyard_sets_embeds(graveyard: list[Beatmapset]) -> list[Embed]:
+    line_items = [line_item_allowed_unranked(b) for b in graveyard]
+    return embeds_from_line_items("Pending/Graveyard beatmapsets found", line_items, discord.Color.blurple(), page_count(len(line_items)))
+
+def ranked_sets_embeds(ranked: list[Beatmapset]) -> list[Embed]:
+    line_items = [line_item_allowed_loved(b) if b.status == RankStatus.LOVED else line_item_allowed_ranked(b) for b in ranked]
+    return embeds_from_line_items("Ranked/Loved beatmapsets found", line_items, discord.Color.green(), page_count(len(line_items)))
 
 def dmca_sets(beatmapsets: list[Beatmapset]) -> list[Beatmapset]:
     return [b for b in beatmapsets if b.availability.more_information is not None or b.availability.download_disabled]
@@ -87,7 +111,7 @@ def count_partial(beatmapsets: list[Beatmapset]) -> int:
 def count_dmca(beatmapsets: list[Beatmapset]) -> int:
     return len(dmca_sets(beatmapsets))
 
-def description(beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> str:
+def menu(interaction: discord.Interaction, beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> ViewMenu:
     allowed = [b for b in beatmapsets if validator.is_allowed(b)]
     partial = [b for b in beatmapsets if validator.is_partial(b)]
     disallowed = [b for b in beatmapsets if validator.is_disallowed(b)]
@@ -98,26 +122,32 @@ def description(beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> str:
     dmca_count = count_dmca(beatmapsets)
     disallowed_count = count_disallowed(disallowed)
     partial_count = count_partial(partial)
-    ranked_count = count_ranked(allowed)
     graveyard_count = count_graveyard(allowed)
+    ranked_count = count_ranked(allowed)
 
-    s = ""
+    view_menu = ViewMenu(interaction, menu_type=ViewMenu.TypeEmbed)
+    pages = []
+
     if dmca_count > 0:
-        s += dmca_sets_description(dmca)
+        pages += dmca_sets_embeds(dmca)
 
     if disallowed_count > 0:
-        s += disallowed_sets_description(disallowed)
+        pages += disallowed_sets_embeds(disallowed)
 
     if partial_count > 0:
-        s += partial_sets_description(partial)
+        pages += partial_sets_embeds(partial)
 
     if graveyard_count > 0:
-        s += allowed_graveyard_sets_description(graveyard)
+        pages += allowed_graveyard_sets_embeds(graveyard)
 
     if ranked_count > 0:
-        s += ranked_sets_description(ranked)
+        pages += ranked_sets_embeds(ranked)
 
-    return s
+    view_menu.add_pages(pages)
+    view_menu.add_button(ViewButton.back())
+    view_menu.add_button(ViewButton.next())
+
+    return view_menu
 
 
 def sanitize(u_input: str) -> set[int]:
@@ -211,17 +241,12 @@ async def validate(ctx: discord.Interaction, u_input: str):
         await ctx.followup.send('Invalid input (map id collection empty).')
         return
 
-    embed = discord.Embed()
-    embed.colour = discord.Colour.blurple()
-    embed.title = "Mappool verification result"
-
     try:
         beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
         dmca = dmca_sets(beatmapsets)
 
-        embed.description = description(beatmapsets, dmca)
-
-        await ctx.followup.send(embed=embed)
+        view_menu = menu(ctx, beatmapsets, dmca)
+        await view_menu.start()
     except ValueError as e:
         logger.warning(f'Invalid input [{e}].')
         await ctx.followup.send(f'Invalid input [{e}].')
