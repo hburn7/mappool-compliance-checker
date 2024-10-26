@@ -4,7 +4,7 @@ def test_sanitize_full_beatmapset():
     url = "https://osu.ppy.sh/beatmapsets/90784#osu/246099"
     ids = client.sanitize(url)
 
-    assert ids == {90784}
+    assert ids == {246099}
 
 def test_sanitize_partial_beatmapset():
     url = "https://osu.ppy.sh/beatmapsets/90784#osu"
