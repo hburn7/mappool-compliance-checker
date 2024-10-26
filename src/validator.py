@@ -45,14 +45,29 @@ def flag_key_match(artist: str) -> str | None:
     return the flagged artist. Otherwise, return None.
     """
     keys = flagged_artists.keys()
-    for key in keys:
-        if key.lower() in artist.lower():
-            return key
+
+    if ' ' in artist:
+        # We have a space in the artist's name, do a partial match
+        for key in keys:
+            if key.lower() in artist.lower():
+                return key
+    else:
+        # No space in the artist's name, look for an exact match
+        # We do this to avoid these kinds of edge cases:
+        # (NOMA -> nomanoma) https://osu.ppy.sh/beatmapsets/2062097#osu/4311526
+        for key in keys:
+            if key.lower() == artist.lower():
+                return key
 
     return None
 
 def artist_flagged(artist: str) -> bool:
+    # exact match
     if artist in flagged_artists:
+        return True
+
+    # lower case match
+    if artist.lower() in [x.lower() for x in flagged_artists.keys()]:
         return True
 
     return flag_key_match(artist) is not None

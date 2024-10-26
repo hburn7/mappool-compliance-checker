@@ -9,7 +9,14 @@ def __no_dmca_ranked_beatmap():
     beatmapset.availability = Availability()
     beatmapset.availability.download_disabled = False
     beatmapset.availability.more_information = None
+    beatmapset.track_id = None
     beatmapset.status = RankStatus.RANKED
+
+    return beatmapset
+
+def __no_dmca_graveyard_beatmap():
+    beatmapset = __no_dmca_ranked_beatmap()
+    beatmapset.status = RankStatus.GRAVEYARD
 
     return beatmapset
 
@@ -70,47 +77,53 @@ def test_beatmapset_is_not_allowed_dmca():
     assert(validator.is_allowed(beatmapset) == False)
 
 def test_beatmapset_is_partial_artist():
-    beatmapset = __no_dmca_ranked_beatmap()
-    beatmapset.status = RankStatus.GRAVEYARD
+    beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'Akira Complex'
     assert(validator.is_partial(beatmapset))
 
 def test_beatmapset_is_partial_artist_collab():
-    beatmapset = __no_dmca_ranked_beatmap()
-    beatmapset.status = RankStatus.GRAVEYARD
+    beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'Akira Complex & Hommarju'
     assert(validator.is_partial(beatmapset))
 
 def test_beatmapset_artist_partial_track_licensed():
-    beatmapset = __no_dmca_ranked_beatmap()
+    beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'Akira Complex'
     beatmapset.track_id = 1234
-    beatmapset.status = RankStatus.GRAVEYARD
     assert(validator.is_partial(beatmapset) == False)
     assert(validator.is_allowed(beatmapset))
 
 def test_disallowed_artist():
-    beatmapset = __no_dmca_ranked_beatmap()
-    beatmapset.status = RankStatus.GRAVEYARD
+    beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'Igorrr'
     assert(validator.is_disallowed(beatmapset))
 
 def test_disallowed_artist_collab():
-    beatmapset = __no_dmca_ranked_beatmap()
-    beatmapset.status = RankStatus.GRAVEYARD
+    beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'Igorrr vs. Camellia'
     assert(validator.is_disallowed(beatmapset))
 
 # Edge case: https://osu.ppy.sh/beatmapsets/2148404#mania/4525647
 def test_edge_uma_vs_morimori_partial():
-    beatmapset = Beatmapset()
-    beatmapset.availability = Availability()
-    beatmapset.availability.download_disabled = False
-    beatmapset.availability.more_information = None
-    beatmapset.track_id = None
-
+    beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'uma vs. Morimori Atsushi'
-    beatmapset.status = RankStatus.GRAVEYARD
 
     # Needs to be disallowed because Morimori Atsushi is a prohibited artist
     assert(validator.is_partial(beatmapset))
+
+def test_edge_artist_one_word_flase_flag():
+    """If a disallowed artist appears in the same word as another legitimate artist,
+    it should not be flagged. i.e. NOMA inside of NOMANOA should not be flagged.
+    NOMA vs. NOMANOA should be flagged."""
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'nomanoa'
+
+    # Needs to be disallowed because Morimori Atsushi is a prohibited artist
+    assert(validator.is_allowed(beatmapset))
+
+def test_disallowed_space_in_name():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'Hatsuki Yura'
+
+    assert(validator.is_disallowed(beatmapset))
+
