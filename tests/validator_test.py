@@ -121,3 +121,9 @@ def test_edge_artist_one_word_flase_flag():
     # Needs to be disallowed because Morimori Atsushi is a prohibited artist
     assert(validator.is_allowed(beatmapset))
 
+def test_disallowed_space_in_name():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'Hatsuki Yura'
+
+    assert(validator.is_disallowed(beatmapset))
+
