@@ -11,7 +11,6 @@ from ossapi.enums import RankStatus
 from reactionmenu import ViewMenu, ViewButton
 
 import validator
-from src.validator import PARTIAL_STATUS
 
 intents = discord.Intents.default()
 intents.messages = True
