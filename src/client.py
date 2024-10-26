@@ -11,6 +11,7 @@ from ossapi.enums import RankStatus
 from reactionmenu import ViewMenu, ViewButton
 
 import validator
+from src.validator import PARTIAL_STATUS
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -32,6 +33,9 @@ logger = logging.getLogger('client')
 
 PAGE_SIZE = 25
 
+SUCCESS_TEXT = "🥳 No disallowed beatmapsets found!"
+FAILURE_TEXT = "⛔ Disallowed beatmapsets found!"
+WARN_TEXT = "⚠️Ensure all flagged tracks are compliant!"
 
 @client.event
 async def on_ready():
@@ -40,6 +44,8 @@ async def on_ready():
 
     logger.info('Commands synced, bot is ready!')
 
+def no_disallowed_beatmapsets_text():
+    return
 
 def line_item_dmca(beatmapset: Beatmapset) -> str:
     return f"⛔ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
@@ -120,6 +126,15 @@ def count_partial(beatmapsets: list[Beatmapset]) -> int:
 def count_dmca(beatmapsets: list[Beatmapset]) -> int:
     return len(dmca_sets(beatmapsets))
 
+def success_error_text(error: bool, partial: bool):
+    if error:
+        return FAILURE_TEXT
+
+    if partial:
+        return WARN_TEXT
+
+    return SUCCESS_TEXT
+
 def menu(interaction: discord.Interaction, beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> ViewMenu:
     allowed = sorted([b for b in beatmapsets if validator.is_allowed(b)], key=lambda b: b.artist)
     partial = [b for b in beatmapsets if validator.is_partial(b)]
@@ -152,8 +167,10 @@ def menu(interaction: discord.Interaction, beatmapsets: list[Beatmapset], dmca: 
     if ranked_count > 0:
         pages += ranked_sets_embeds(ranked)
 
+    status_text = success_error_text(dmca_count > 0 or disallowed_count > 0, partial_count > 0)
+
     for page in pages:
-        page.set_footer(text='️⛔: %d | ❌: %d | ⚠️%d | ☑️: %d | ✅ / 💞: %d' %
+        page.set_footer(text=f'\n{status_text}\n️⛔: %d | ❌: %d | ⚠️%d | ☑️: %d | ✅ / 💞: %d' %
                              (dmca_count, disallowed_count, partial_count, graveyard_count, ranked_count))
 
     view_menu.add_pages(pages)
