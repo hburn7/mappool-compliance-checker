@@ -127,3 +127,35 @@ def test_disallowed_space_in_name():
 
     assert(validator.is_disallowed(beatmapset))
 
+def test_override_allowed():
+    """Designed to catch some edge cases with wrong
+    metadata for tracks which may have been renamed or something.
+    This is a good example: https://osu.ppy.sh/beatmapsets/352169#osu/776107
+    The officially licensed track name is 'Txxs or get the fxxk out!!' whereas
+    this beatmap uses 'Tits or get the fuck out!!'"""
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = "Morimori Atsushi"
+    beatmapset.title = "Tits or get the fuck out!!"
+
+    assert(validator.is_allowed(beatmapset))
+
+def test_overrides():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = "Morimori Atsushi"
+    beatmapset.title = "Tits or get the fuck out!!"
+
+    assert(validator.is_override(beatmapset, "allowed"))
+
+def test_overrides_negative_artist():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = "Morimori Sushi"
+    beatmapset.title = "Tits or get the fuck out!!"
+
+    assert(not validator.is_override(beatmapset, "allowed"))
+
+def test_overrides_negative_title():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = "Morimori Atsushi"
+    beatmapset.title = "Tits or get the fuck outt!!"
+
+    assert(not validator.is_override(beatmapset, "allowed"))
