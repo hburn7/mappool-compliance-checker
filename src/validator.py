@@ -2,6 +2,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import json
+from typing import override
 
 from ossapi import Beatmapset
 from ossapi.enums import RankStatus
@@ -14,17 +15,22 @@ class FlaggedArtistData:
     status: str # Either 'partial' or 'disallowed'
     notes: str | None
 
-path = Path('./flagged.json')
+flag_path = Path('./flagged.json')
+overrides_path = Path('./overrides.json')
 
 flagged_artists = {} # dict -> artist: FlaggedArtistData
+overrides = []
 
 # We only want to parse this once to save resources
 if len(flagged_artists) == 0:
-    with open(path, 'r') as file:
+    with open(flag_path, 'r') as file:
         flagged_artists = dict(json.load(file))
 
         for k in flagged_artists:
             flagged_artists[k] = FlaggedArtistData(**flagged_artists[k])
+
+    with open(overrides_path, 'r') as file:
+        overrides = list(json.load(file))
 
 def is_dmca(beatmapset: Beatmapset) -> bool:
     return beatmapset.availability.download_disabled or \
@@ -72,7 +78,23 @@ def artist_flagged(artist: str) -> bool:
 
     return flag_key_match(artist) is not None
 
+def is_override(beatmapset: Beatmapset, target_status: str) -> bool:
+    """Returns true if the provided beatmapset is overridden to
+    the provided target_status.
+
+    For example, if the overrides list contains 'abcd' by artist 'efgh' as
+    an override to 'disallowed', and the beatmapset metadata matches this,
+    and the 'target_status' is 'disallowed', this function returns true."""
+    for o in overrides:
+        if o['artist'] == beatmapset.artist and o['title'] == beatmapset.title and o['status'] == target_status:
+            return True
+
+    return False
+
 def is_partial(beatmapset: Beatmapset) -> bool:
+    if is_override(beatmapset, "partial"):
+        return True
+
     if is_allowed(beatmapset):
         return False
 
@@ -106,9 +128,15 @@ def is_allowed(beatmapset: Beatmapset):
     if is_licensed(beatmapset.track_id) or is_status_approved(beatmapset.status):
         return True
 
+    if is_override(beatmapset, "allowed"):
+        return True
+
     return not artist_flagged(beatmapset.artist)
 
 def is_disallowed(beatmapset: Beatmapset) -> bool:
+    if is_override(beatmapset, "disallowed"):
+        return True
+
     if is_allowed(beatmapset):
         return False
 
