@@ -166,18 +166,21 @@ def test_banned_source():
     beatmapset_3 = __no_dmca_graveyard_beatmap()
     beatmapset_4 = __no_dmca_graveyard_beatmap()
     beatmapset_5 = __no_dmca_graveyard_beatmap()
+    beatmapset_6 = __no_dmca_graveyard_beatmap()
 
     beatmapset_1.source = "DJMAX"
     beatmapset_2.source = "DJ MAX"
     beatmapset_3.source = "djmax"
     beatmapset_4.source = "neowiz"
     beatmapset_5.source = "chillierpear"
+    beatmapset_6.source = "DJMAX Portable 3"
 
     assert(validator.is_disallowed(beatmapset_1))
     assert(validator.is_disallowed(beatmapset_2))
     assert(validator.is_disallowed(beatmapset_3))
     assert(validator.is_disallowed(beatmapset_4))
     assert(validator.is_allowed(beatmapset_5))
+    assert(validator.is_disallowed(beatmapset_6))
 
 def test_warning_banned_source_description():
     beatmapset = __no_dmca_graveyard_beatmap()

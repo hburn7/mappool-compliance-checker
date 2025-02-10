@@ -162,6 +162,9 @@ def is_allowed(beatmapset: Beatmapset):
     if is_override(beatmapset, "allowed"):
         return True
 
+    if is_banned_source(beatmapset):
+        return False
+
     if description_contains_banned_source(beatmapset):
         return False
 
