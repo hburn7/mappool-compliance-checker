@@ -2,7 +2,6 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import json
-from typing import override
 
 from ossapi import Beatmapset
 from ossapi.enums import RankStatus
@@ -17,9 +16,11 @@ class FlaggedArtistData:
 
 flag_path = Path('./flagged.json')
 overrides_path = Path('./overrides.json')
+sources_path = Path('./banned_sources.json')
 
 flagged_artists = {} # dict -> artist: FlaggedArtistData
 overrides = []
+banned_sources = []
 
 # We only want to parse this once to save resources
 if len(flagged_artists) == 0:
@@ -31,6 +32,19 @@ if len(flagged_artists) == 0:
 
     with open(overrides_path, 'r') as file:
         overrides = list(json.load(file))
+
+    with open(sources_path, 'r') as file:
+        banned_sources = list(json.load(file))
+
+def is_banned_source(beatmapset: Beatmapset) -> bool:
+    if beatmapset.source is None:
+        return False
+
+    for source in banned_sources:
+        if source.lower() in beatmapset.source.lower():
+            return True
+
+    return False
 
 def is_dmca(beatmapset: Beatmapset) -> bool:
     return beatmapset.availability.download_disabled or \
@@ -91,8 +105,24 @@ def is_override(beatmapset: Beatmapset, target_status: str) -> bool:
 
     return False
 
+def description_contains_banned_source(beatmapset: Beatmapset) -> bool:
+    desc = beatmapset.description["description"] if beatmapset.description else None
+    l_desc = desc.lower() if desc else None
+    if not l_desc:
+        return False
+
+    for source in banned_sources:
+        if source.lower() in l_desc:
+            return True
+
+    return False
+
+
 def is_partial(beatmapset: Beatmapset) -> bool:
     if is_override(beatmapset, "partial"):
+        return True
+
+    if description_contains_banned_source(beatmapset):
         return True
 
     if is_allowed(beatmapset):
@@ -118,7 +148,8 @@ def is_allowed(beatmapset: Beatmapset):
     0. The beatmap cannot have any DMCA notices at all.
     1. If the beatmap is ranked, approved, or loved, it is allowed.
     2. If the track is licensed, it is allowed.
-    3. If the beatmap is neither of those and the artist is not in our
+    3. The beatmapset description does not contain a banned source (safety check).
+    4. If the beatmap is neither of those and the artist is not in our
     disallowed / partial list, it is allowed. To be on the safe side,
     i.e. in the case of gray-area collabs,
     """
@@ -131,10 +162,16 @@ def is_allowed(beatmapset: Beatmapset):
     if is_override(beatmapset, "allowed"):
         return True
 
+    if description_contains_banned_source(beatmapset):
+        return False
+
     return not artist_flagged(beatmapset.artist)
 
 def is_disallowed(beatmapset: Beatmapset) -> bool:
     if is_override(beatmapset, "disallowed"):
+        return True
+
+    if is_banned_source(beatmapset):
         return True
 
     if is_allowed(beatmapset):
