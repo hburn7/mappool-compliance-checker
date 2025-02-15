@@ -34,7 +34,7 @@ PAGE_SIZE = 25
 
 SUCCESS_TEXT = "🥳 No disallowed beatmapsets found!"
 FAILURE_TEXT = "⛔ Disallowed beatmapsets found!"
-WARN_TEXT = "⚠️Ensure all flagged tracks are compliant!"
+WARN_TEXT = "⚠️Ensure all flagged beatmapsets are compliant!"
 
 @client.event
 async def on_ready():
@@ -54,7 +54,13 @@ def line_item_disallowed(beatmapset: Beatmapset) -> str:
 
 def line_item_partial(beatmapset: Beatmapset) -> str:
     key = validator.flag_key_match(beatmapset.artist)
-    notes = validator.flagged_artists[key].notes if key is not None else None
+
+    notes = None
+    if validator.description_contains_banned_source(beatmapset):
+        notes = 'Beatmapset description mentions a prohibited source.'
+    elif key:
+        notes = validator.flagged_artists[key].notes
+
     s = f":warning: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
     if notes is not None:
@@ -213,8 +219,8 @@ async def fetch_beatmapsets(ids: set[int]) -> (list[ossapi.Beatmapset], list[int
     :param ids: A set of beatmap ids
 
     :return: A tuple containing a list of beatmapsets and a list of ids which were not found"""
-    # Split ids into batches of 30 maps
-    id_sets = [list(ids)[i:i + 30] for i in range(0, len(ids), 30)]
+    # Split ids into batches of 50 maps
+    id_sets = [list(ids)[i:i + 50] for i in range(0, len(ids), 50)]
     beatmaps = []
 
     for set_ in id_sets:
@@ -225,7 +231,7 @@ async def fetch_beatmapsets(ids: set[int]) -> (list[ossapi.Beatmapset], list[int
 
     # Find beatmapsets of any ids which were not found here
     error_ids = ids - all_ids
-    return [b.beatmapset() for b in beatmaps], error_ids
+    return [await oss_client.beatmapset(b.beatmapset_id) for b in beatmaps], error_ids
 
 
 def run():
