@@ -138,6 +138,12 @@ def test_override_allowed():
     beatmapset.title = "Tits or get the fuck out!!"
 
     assert(validator.is_allowed(beatmapset))
+    
+def test_override_disallowed():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = "Lusumi"
+    beatmapset.title = "/execution_program.wav"
+    assert(validator.is_disallowed(beatmapset))
 
 def test_overrides():
     beatmapset = __no_dmca_graveyard_beatmap()
@@ -145,7 +151,13 @@ def test_overrides():
     beatmapset.title = "Tits or get the fuck out!!"
 
     assert(validator.is_override(beatmapset, "allowed"))
-
+    
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = "Lusumi"
+    beatmapset.title = "/execution_program.wav"
+    
+    assert(validator.is_override(beatmapset, "disallowed"))
+    
 def test_overrides_negative_artist():
     beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = "Morimori Sushi"
