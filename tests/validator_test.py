@@ -217,3 +217,52 @@ def create_description(description: str | None):
         }
 
     return None
+
+def test_artist_in_title_flagged_remix():
+    title = "Flower Petal (Igorrr Remix)"
+    assert(validator.artist_in_title_flagged(title))
+
+def test_artist_in_title_flagged_feat():
+    title = "Really Long Name (feat. Igorrr)"
+    assert(validator.artist_in_title_flagged(title))
+
+def test_artist_in_title_flagged_vs():
+    title = "Song Name (Igorrr vs. Camellia)"
+    assert(validator.artist_in_title_flagged(title))
+
+def test_artist_in_title_flagged_case_insensitive():
+    title = "Some Song (IgOrRr Remix)"
+    assert(validator.artist_in_title_flagged(title))
+
+def test_artist_in_title_not_flagged():
+    title = "Normal Song Title"
+    assert(validator.artist_in_title_flagged(title) == False)
+
+def test_artist_in_title_partial_word_not_flagged():
+    title = "NOMANOA Remix"
+    assert(validator.artist_in_title_flagged(title) == False)
+
+def test_artist_in_title_space_in_name():
+    title = "Something (Hatsuki Yura Remix)"
+    assert(validator.artist_in_title_flagged(title))
+
+def test_disallowed_artist_in_title():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.title = "Song Name (Igorrr Remix)"
+    assert(validator.is_disallowed(beatmapset))
+
+def test_partial_artist_in_title():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.title = "Song Name (Akira Complex Remix)"
+    assert(validator.is_partial(beatmapset))
+
+def test_allowed_artist_in_title_when_licensed():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.title = "Song Name (Akira Complex Remix)"
+    beatmapset.track_id = 1234
+    assert(validator.is_allowed(beatmapset))
+
+def test_disallowed_artist_in_title_with_feat():
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.title = "Amazing Track (feat. Igorrr)"
+    assert(validator.is_disallowed(beatmapset))
