@@ -1,5 +1,6 @@
 from pathlib import Path
 from dataclasses import dataclass
+import re
 
 import json
 
@@ -92,6 +93,62 @@ def artist_flagged(artist: str) -> bool:
 
     return flag_key_match(artist) is not None
 
+def artist_in_title_flagged(title: str) -> bool:
+    """
+    Checks if any flagged artists appear in the beatmap title.
+    This catches cases like "Song Name (Artist Remix)" or "Track (feat. Artist)"
+    """
+    if not title:
+        return False
+    
+    lower_title = title.lower()
+    
+    for artist in flagged_artists.keys():
+        lower_artist = artist.lower()
+        
+        # For artists with spaces in their name, do a simple substring match
+        if ' ' in artist:
+            if lower_artist in lower_title:
+                return True
+        else:
+            # For single-word artists, ensure word boundaries to avoid false positives
+            # Check for common patterns like "remix", "feat.", "vs.", etc.
+            # Word boundary pattern - artist must be a complete word
+            pattern = r'\b' + re.escape(lower_artist) + r'\b'
+            if re.search(pattern, lower_title):
+                return True
+    
+    return False
+
+def get_flagged_artist_in_title(title: str) -> tuple[str | None, str | None]:
+    """
+    Returns the flagged artist found in the title and their status.
+    Returns (artist_name, status) or (None, None) if no flagged artist found.
+    """
+    if not title:
+        return (None, None)
+    
+    lower_title = title.lower()
+    
+    for artist in flagged_artists.keys():
+        lower_artist = artist.lower()
+        found = False
+        
+        # For artists with spaces in their name, do a simple substring match
+        if ' ' in artist:
+            if lower_artist in lower_title:
+                found = True
+        else:
+            # For single-word artists, ensure word boundaries to avoid false positives
+            pattern = r'\b' + re.escape(lower_artist) + r'\b'
+            if re.search(pattern, lower_title):
+                found = True
+        
+        if found:
+            return (artist, flagged_artists[artist].status)
+    
+    return (None, None)
+
 def is_override(beatmapset: Beatmapset, target_status: str) -> bool:
     """Returns true if the provided beatmapset is overridden to
     the provided target_status.
@@ -128,16 +185,20 @@ def is_partial(beatmapset: Beatmapset) -> bool:
     if is_allowed(beatmapset):
         return False
 
+    # Check if artist is flagged in the artist field
     artist = beatmapset.artist
+    artist_field_partial = False
+    
+    if artist_flagged(artist):
+        key = flag_key_match(artist)
+        if key is not None:
+            artist_field_partial = flagged_artists[key].status == PARTIAL_STATUS
 
-    if not artist_flagged(artist):
-        return False
+    # Check if artist is flagged in the title field
+    title_artist, title_status = get_flagged_artist_in_title(beatmapset.title)
+    title_field_partial = title_artist is not None and title_status == PARTIAL_STATUS
 
-    key = flag_key_match(artist)
-    if key is not None:
-        return flagged_artists[key].status == PARTIAL_STATUS
-
-    return False
+    return artist_field_partial or title_field_partial
 
 def is_allowed(beatmapset: Beatmapset):
     """
@@ -168,7 +229,14 @@ def is_allowed(beatmapset: Beatmapset):
     if description_contains_banned_source(beatmapset):
         return False
 
-    return not artist_flagged(beatmapset.artist)
+    # Check both artist field and title field for flagged artists
+    if artist_flagged(beatmapset.artist):
+        return False
+    
+    if artist_in_title_flagged(beatmapset.title):
+        return False
+    
+    return True
 
 def is_disallowed(beatmapset: Beatmapset) -> bool:
     if is_override(beatmapset, "disallowed"):
@@ -180,11 +248,15 @@ def is_disallowed(beatmapset: Beatmapset) -> bool:
     if is_allowed(beatmapset):
         return False
 
-    if not artist_flagged(beatmapset.artist):
-        return False
+    # Check if artist is flagged in the artist field
+    artist_field_disallowed = False
+    if artist_flagged(beatmapset.artist):
+        key = flag_key_match(beatmapset.artist)
+        if key is not None:
+            artist_field_disallowed = flagged_artists[key].status == DISALLOWED_STATUS
 
-    key = flag_key_match(beatmapset.artist)
-    if key is not None:
-        return flagged_artists[key].status == DISALLOWED_STATUS
+    # Check if artist is flagged in the title field
+    title_artist, title_status = get_flagged_artist_in_title(beatmapset.title)
+    title_field_disallowed = title_artist is not None and title_status == DISALLOWED_STATUS
 
-    return False
+    return artist_field_disallowed or title_field_disallowed

@@ -50,14 +50,26 @@ def line_item_dmca(beatmapset: Beatmapset) -> str:
     return f"⛔ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
 
 def line_item_disallowed(beatmapset: Beatmapset) -> str:
-    return f"❌ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
+    base = f"❌ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
+    
+    # Check if artist found in title
+    title_artist, _ = validator.get_flagged_artist_in_title(beatmapset.title)
+    if title_artist:
+        base += f" - Disallowed artist '{title_artist}' found in title"
+    
+    return base
 
 def line_item_partial(beatmapset: Beatmapset) -> str:
     key = validator.flag_key_match(beatmapset.artist)
+    title_artist, _ = validator.get_flagged_artist_in_title(beatmapset.title)
 
     notes = None
     if validator.description_contains_banned_source(beatmapset):
         notes = 'Beatmapset description mentions a prohibited source.'
+    elif title_artist:
+        notes = f"Partially allowed artist '{title_artist}' found in title"
+        if key and validator.flagged_artists[key].notes:
+            notes += f" - {validator.flagged_artists[key].notes}"
     elif key:
         notes = validator.flagged_artists[key].notes
 
