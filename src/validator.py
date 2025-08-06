@@ -68,9 +68,12 @@ def flag_key_match(artist: str) -> str | None:
     keys = flagged_artists.keys()
 
     if ' ' in artist:
-        # We have a space in the artist's name, do a partial match
+        # We have a space in the artist's name, check for word boundaries
+        # This handles cases like "Igorrr vs. Camellia" or "Artist feat. Another"
         for key in keys:
-            if key.lower() in artist.lower():
+            # Use word boundary regex to avoid false positives
+            pattern = r'\b' + re.escape(key.lower()) + r'\b'
+            if re.search(pattern, artist.lower()):
                 return key
     else:
         # No space in the artist's name, look for an exact match

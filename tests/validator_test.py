@@ -111,14 +111,57 @@ def test_edge_uma_vs_morimori_partial():
     # Needs to be disallowed because Morimori Atsushi is a prohibited artist
     assert(validator.is_partial(beatmapset))
 
-def test_edge_artist_one_word_flase_flag():
+def test_edge_artist_one_word_false_flag():
     """If a disallowed artist appears in the same word as another legitimate artist,
     it should not be flagged. i.e. NOMA inside of NOMANOA should not be flagged.
     NOMA vs. NOMANOA should be flagged."""
     beatmapset = __no_dmca_graveyard_beatmap()
     beatmapset.artist = 'nomanoa'
 
-    # Needs to be disallowed because Morimori Atsushi is a prohibited artist
+    # Should be allowed because NOMA should not match within NOMANOA
+    assert(validator.is_allowed(beatmapset))
+
+def test_word_boundary_tsunomaki_watame():
+    """Test that 'NOMA' does not flag 'Tsunomaki Watame' (false positive fix)"""
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'Tsunomaki Watame'
+    
+    # Should be allowed - NOMA should not match within Tsunomaki
+    assert(validator.is_allowed(beatmapset))
+
+def test_word_boundary_noma_vs_someone():
+    """Test that 'NOMA vs. Someone' correctly flags for 'NOMA'"""
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'NOMA vs. Good Artist'
+    
+    # Should be disallowed because NOMA is a word boundary match
+    assert(validator.is_disallowed(beatmapset))
+
+def test_word_boundary_edge_cases():
+    """Test various word boundary edge cases"""
+    # Test 1: Artist name at the beginning
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'NOMA feat. Someone'
+    assert(validator.is_disallowed(beatmapset))
+    
+    # Test 2: Artist name at the end
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'Someone feat. NOMA'
+    assert(validator.is_disallowed(beatmapset))
+    
+    # Test 3: Artist name in parentheses
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'Track (NOMA Remix)'
+    assert(validator.is_disallowed(beatmapset))
+    
+    # Test 4: Artist name with punctuation
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'NOMA, Someone Else'
+    assert(validator.is_disallowed(beatmapset))
+    
+    # Test 5: Partial match should not flag when part of another word
+    beatmapset = __no_dmca_graveyard_beatmap()
+    beatmapset.artist = 'Binomaly'  # Contains "noma" but shouldn't flag
     assert(validator.is_allowed(beatmapset))
 
 def test_disallowed_space_in_name():
