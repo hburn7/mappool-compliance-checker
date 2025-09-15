@@ -51,109 +51,76 @@ async def on_ready():
     logger.info('Commands synced, bot is ready!')
 
 
-def line_item_dmca(response: api.ValidationResponse) -> str:
-    s = f"⛔ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
-
+def format_line_item(response: api.ValidationResponse) -> str:
+    base_url = f"https://osu.ppy.sh/beatmapsets/{response.beatmapsetId}"
+    
+    if response.complianceStatus == ComplianceStatus.DISALLOWED:
+        if response.complianceFailureReason == ComplianceFailureReason.DMCA:
+            icon = "⛔"
+        else:
+            icon = "❌"
+    elif response.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED:
+        icon = ":warning:"
+    else:  # OK status
+        if response.status in ["ranked", "approved"]:
+            icon = "✅"
+        elif response.status == "loved":
+            icon = "💞"
+        else:
+            icon = ":ballot_box_with_check:"
+    
+    s = f"{icon} [{response.artist} - {response.title}]({base_url})"
+    
+    # Add failure reason for disallowed items
+    if response.complianceStatus == ComplianceStatus.DISALLOWED:
+        if response.complianceFailureReasonString and response.complianceFailureReason == ComplianceFailureReason.DISALLOWED_ARTIST:
+            s += f" - {response.complianceFailureReasonString}"
+    
     if response.notes:
         s += f" - {response.notes}"
-
+    
     return s
 
-def line_item_disallowed(response: api.ValidationResponse) -> str:
-    base = f"❌ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
-
-    # Add reason if available
-    if response.complianceFailureReasonString:
-        if response.complianceFailureReason == ComplianceFailureReason.DISALLOWED_ARTIST:
-            base += f" - {response.complianceFailureReasonString}"
-
-    if response.notes:
-        base += f" - {response.notes}"
-
-    return base
-
-def line_item_partial(response: api.ValidationResponse) -> str:
-    s = f":warning: [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
-
-    if response.notes:
-        s += f" - {response.notes}"
-
-    return s
-
-def line_item_allowed_unranked(response: api.ValidationResponse) -> str:
-    s = f":ballot_box_with_check: [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
-
-    if response.notes:
-        s += f" - {response.notes}"
-
-    return s
-
-def line_item_allowed_ranked(response: api.ValidationResponse) -> str:
-    s = f"✅ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
-
-    if response.notes:
-        s += f" - {response.notes}"
-
-    return s
-
-def line_item_allowed_loved(response: api.ValidationResponse) -> str:
-    s = f"💞 [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
-
-    if response.notes:
-        s += f" - {response.notes}"
-
-    return s
-
-def embeds_from_line_items(title, line_items: list[str], color: discord.Color) -> list[Embed]:
+def create_embeds(responses: list[api.ValidationResponse], title: str, color: discord.Color) -> list[Embed]:
     embeds = []
+    line_items = [format_line_item(r) for r in responses]
+    
     for i in range(0, len(line_items), PAGE_SIZE):
         embed = discord.Embed(title=title, color=color)
         embed.description = '\n'.join(line_items[i:i + PAGE_SIZE])
         embeds.append(embed)
+    
+    return embeds if embeds else [discord.Embed(title=title, description="No beatmaps found", color=color)]
 
-    return embeds
-
-def page_count(n: int) -> int:
-    # 1 page per PAGE_SIZE items
-    return n // PAGE_SIZE + 1
-
-def dmca_sets_embeds(dmca: list[api.ValidationResponse]) -> list[Embed]:
-    line_items = [line_item_dmca(b) for b in dmca]
-    return embeds_from_line_items("DMCA'd beatmapsets found", line_items, discord.Color.red())
-
-def disallowed_sets_embeds(disallowed: list[api.ValidationResponse]) -> list[Embed]:
-    line_items = [line_item_disallowed(b) for b in disallowed]
-    return embeds_from_line_items("Disallowed beatmapsets found", line_items, discord.Color.red())
-
-def partial_sets_embeds(potential: list[api.ValidationResponse]) -> list[Embed]:
-    line_items = [line_item_partial(b) for b in potential]
-    return embeds_from_line_items("Partially disallowed beatmapsets found", line_items, discord.Color.yellow())
-
-def allowed_graveyard_sets_embeds(graveyard: list[api.ValidationResponse]) -> list[Embed]:
-    line_items = [line_item_allowed_unranked(b) for b in graveyard]
-    return embeds_from_line_items("Pending/Graveyard beatmapsets found", line_items, discord.Color.blurple())
-
-def ranked_sets_embeds(ranked: list[api.ValidationResponse]) -> list[Embed]:
-    line_items = [line_item_allowed_loved(b) if b.status == "loved" else line_item_allowed_ranked(b) for b in ranked]
-    return embeds_from_line_items("Ranked/Loved beatmapsets found", line_items, discord.Color.green())
-
-def count_graveyard(responses: list[api.ValidationResponse]) -> int:
-    return len([r for r in responses if r.status not in ["ranked", "loved", "approved"]])
-
-def count_ranked(responses: list[api.ValidationResponse]) -> int:
-    return len([r for r in responses if r.status in ["ranked", "loved", "approved"]])
-
-def count_allowed(responses: list[api.ValidationResponse]) -> int:
-    return len([r for r in responses if r.complianceStatus == ComplianceStatus.OK])
-
-def count_disallowed(responses: list[api.ValidationResponse]) -> int:
-    return len([r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED])
-
-def count_partial(responses: list[api.ValidationResponse]) -> int:
-    return len([r for r in responses if r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED])
-
-def count_dmca(responses: list[api.ValidationResponse]) -> int:
-    return len(dmca_responses(responses))
+def categorize_responses(responses: list[api.ValidationResponse]) -> tuple[list, list, list]:
+    ok = []
+    potential = []
+    disallowed = []
+    
+    for r in responses:
+        if r.complianceStatus == ComplianceStatus.OK:
+            ok.append(r)
+        elif r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED:
+            potential.append(r)
+        elif r.complianceStatus == ComplianceStatus.DISALLOWED:
+            disallowed.append(r)
+    
+    # Sort disallowed by severity (DMCA first, then by reason)
+    disallowed.sort(key=lambda x: (x.complianceFailureReason if x.complianceFailureReason is not None else 999))
+    
+    # Sort OK by status (ranked/approved first, then loved, then graveyard)
+    def status_priority(r):
+        if r.status in ["ranked", "approved"]:
+            return 0
+        elif r.status == "loved":
+            return 1
+        else:
+            return 2
+    
+    ok.sort(key=lambda x: (status_priority(x), x.artist.lower() if x.artist else ''))
+    potential.sort(key=lambda x: x.artist.lower() if x.artist else '')
+    
+    return ok, potential, disallowed
 
 def success_error_text(error: bool, potential: bool):
     if error:
@@ -165,50 +132,75 @@ def success_error_text(error: bool, potential: bool):
     return SUCCESS_TEXT
 
 def menu(interaction: discord.Interaction, responses: list[api.ValidationResponse]) -> ViewMenu:
-    allowed = sorted([r for r in responses if r.complianceStatus == ComplianceStatus.OK], key=lambda r: r.artist)
-    potential = [r for r in responses if r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED]
-    disallowed = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED and 
-                  r.complianceFailureReason != ComplianceFailureReason.DMCA]
-    dmca = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED and 
-            r.complianceFailureReason == ComplianceFailureReason.DMCA]
-
-    ranked = [r for r in allowed if r.status in ["ranked", "loved", "approved"]]
-    graveyard = [r for r in allowed if r not in ranked]
-
+    logger.info(f"Creating menu for {len(responses)} responses")
+    ok, potential, disallowed = categorize_responses(responses)
+    
+    # Build combined list in specified order
+    combined = []
+    
+    # 1. DMCA first
+    dmca = [r for r in disallowed if r.complianceFailureReason == ComplianceFailureReason.DMCA]
+    combined.extend(dmca)
+    
+    # 2. Other disallowed (already sorted by severity)
+    other_disallowed = [r for r in disallowed if r.complianceFailureReason != ComplianceFailureReason.DMCA]
+    combined.extend(other_disallowed)
+    
+    # 3. Potential
+    combined.extend(potential)
+    
+    # 4. OK beatmaps (already sorted by status priority)
+    combined.extend(ok)
+    
+    logger.info(f"Combined list has {len(combined)} items")
+    
+    # Count statistics for footer
     dmca_count = len(dmca)
-    disallowed_count = len(disallowed)
+    disallowed_count = len(other_disallowed)
     partial_count = len(potential)
-    graveyard_count = len(graveyard)
-    ranked_count = len(ranked)
-
+    
+    # Count OK subcategories
+    graveyard_count = len([r for r in ok if r.status not in ["ranked", "loved", "approved"]])
+    ranked_count = len([r for r in ok if r.status in ["ranked", "loved", "approved"]])
+    
+    # Determine overall status and color
+    if dmca_count > 0 or disallowed_count > 0:
+        status_text = FAILURE_TEXT
+        color = discord.Color.red()
+    elif partial_count > 0:
+        status_text = WARN_TEXT
+        color = discord.Color.yellow()
+    else:
+        status_text = SUCCESS_TEXT
+        color = discord.Color.green()
+    
+    # Create embeds with all beatmaps together
+    title = "Mappool Compliance Check Results"
+    embeds = create_embeds(combined, title, color)
+    
+    logger.info(f"Created {len(embeds)} embed(s)")
+    
+    # Add footer with statistics to all pages
+    for embed in embeds:
+        embed.set_footer(text=f'\n{status_text}\n️⛔: {dmca_count} | ❌: {disallowed_count} | ⚠️: {partial_count} | ☑️: {graveyard_count} | ✅ / 💞: {ranked_count}')
+    
+    # Create menu
     view_menu = ViewMenu(interaction, menu_type=ViewMenu.TypeEmbed)
-    pages = []
-
-    if dmca_count > 0:
-        pages += dmca_sets_embeds(dmca)
-
-    if disallowed_count > 0:
-        pages += disallowed_sets_embeds(disallowed)
-
-    if partial_count > 0:
-        pages += partial_sets_embeds(potential)
-
-    if graveyard_count > 0:
-        pages += allowed_graveyard_sets_embeds(graveyard)
-
-    if ranked_count > 0:
-        pages += ranked_sets_embeds(ranked)
-
-    status_text = success_error_text(dmca_count > 0 or disallowed_count > 0, partial_count > 0)
-
-    for page in pages:
-        page.set_footer(text=f'\n{status_text}\n️⛔: %d | ❌: %d | ⚠️%d | ☑️: %d | ✅ / 💞: %d' %
-                             (dmca_count, disallowed_count, partial_count, graveyard_count, ranked_count))
-
-    view_menu.add_pages(pages)
-    view_menu.add_button(ViewButton.back())
-    view_menu.add_button(ViewButton.next())
-
+    view_menu.add_pages(embeds)
+    
+    logger.info(f"ViewMenu created with {len(embeds)} pages")
+    
+    # Always add navigation buttons, but disable them if only one page
+    back_button = ViewButton.back()
+    next_button = ViewButton.next()
+    
+    if len(embeds) <= 1:
+        back_button.disabled = True
+        next_button.disabled = True
+    
+    view_menu.add_button(back_button)
+    view_menu.add_button(next_button)
+    
     return view_menu
 
 
@@ -265,6 +257,9 @@ def run():
     root_logger.addHandler(console_handler)
 
     token = os.getenv('TOKEN')
+    if not token:
+        logger.error('TOKEN environment variable not set')
+        return
     client.run(token, log_handler=None)
 
 
@@ -291,18 +286,30 @@ async def validate(ctx: discord.Interaction, u_input: str):
             await ctx.followup.send('Failed to validate beatmaps. Please try again later.')
             return
 
-        # Sort responses by artist
-        responses = sorted(api_response.results, key=lambda r: r.artist if r.artist else '')
+        # Use results directly - sorting will be done in menu()
+        responses = api_response.results
 
         # Handle any failures
         if api_response.failures:
             logger.warning(f'Failed to validate beatmap IDs: {api_response.failures}')
+        
+        # Check if we have any responses
+        if not responses:
+            await ctx.followup.send('No beatmap data received from the API.')
+            return
 
+        logger.info(f"Processing {len(responses)} beatmap responses")
         view_menu = menu(ctx, responses)
+        logger.info("Starting ViewMenu")
         await view_menu.start()
+        logger.info("ViewMenu started successfully")
     except ValueError as e:
         logger.warning(f'Invalid input [{e}].')
         await ctx.followup.send(f'Invalid input [{e}].')
+        return
+    except Exception as e:
+        logger.error(f'Error creating menu: {e}', exc_info=True)
+        await ctx.followup.send('An error occurred while creating the response menu.')
         return
 
 
