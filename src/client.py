@@ -52,7 +52,12 @@ async def on_ready():
 
 
 def line_item_dmca(response: api.ValidationResponse) -> str:
-    return f"⛔ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+    s = f"⛔ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+
+    if response.notes:
+        s += f" - {response.notes}"
+
+    return s
 
 def line_item_disallowed(response: api.ValidationResponse) -> str:
     base = f"❌ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
@@ -61,6 +66,9 @@ def line_item_disallowed(response: api.ValidationResponse) -> str:
     if response.complianceFailureReasonString:
         if response.complianceFailureReason == ComplianceFailureReason.DISALLOWED_ARTIST:
             base += f" - {response.complianceFailureReasonString}"
+
+    if response.notes:
+        base += f" - {response.notes}"
 
     return base
 
@@ -73,13 +81,28 @@ def line_item_partial(response: api.ValidationResponse) -> str:
     return s
 
 def line_item_allowed_unranked(response: api.ValidationResponse) -> str:
-    return f":ballot_box_with_check: [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+    s = f":ballot_box_with_check: [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+
+    if response.notes:
+        s += f" - {response.notes}"
+
+    return s
 
 def line_item_allowed_ranked(response: api.ValidationResponse) -> str:
-    return f"✅ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+    s = f"✅ [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+
+    if response.notes:
+        s += f" - {response.notes}"
+
+    return s
 
 def line_item_allowed_loved(response: api.ValidationResponse) -> str:
-    return f"💞 [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+    s = f"💞 [{response.artist} - {response.title}](https://osu.ppy.sh/beatmapsets/{response.beatmapsetId})"
+
+    if response.notes:
+        s += f" - {response.notes}"
+
+    return s
 
 def embeds_from_line_items(title, line_items: list[str], color: discord.Color) -> list[Embed]:
     embeds = []
@@ -114,9 +137,6 @@ def ranked_sets_embeds(ranked: list[api.ValidationResponse]) -> list[Embed]:
     line_items = [line_item_allowed_loved(b) if b.status == "loved" else line_item_allowed_ranked(b) for b in ranked]
     return embeds_from_line_items("Ranked/Loved beatmapsets found", line_items, discord.Color.green())
 
-def dmca_responses(responses: list[api.ValidationResponse]) -> list[api.ValidationResponse]:
-    return [r for r in responses if r.complianceFailureReason == ComplianceFailureReason.DMCA]
-
 def count_graveyard(responses: list[api.ValidationResponse]) -> int:
     return len([r for r in responses if r.status not in ["ranked", "loved", "approved"]])
 
@@ -147,8 +167,10 @@ def success_error_text(error: bool, partial: bool):
 def menu(interaction: discord.Interaction, responses: list[api.ValidationResponse]) -> ViewMenu:
     allowed = sorted([r for r in responses if r.complianceStatus == ComplianceStatus.OK], key=lambda r: r.artist)
     partial = [r for r in responses if r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED]
-    disallowed = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED]
-    dmca = dmca_responses(responses)
+    disallowed = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED and 
+                  r.complianceFailureReason != ComplianceFailureReason.DMCA]
+    dmca = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED and 
+            r.complianceFailureReason == ComplianceFailureReason.DMCA]
 
     ranked = [r for r in allowed if r.status in ["ranked", "loved", "approved"]]
     graveyard = [r for r in allowed if r not in ranked]
