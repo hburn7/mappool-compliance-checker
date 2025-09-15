@@ -125,8 +125,8 @@ def disallowed_sets_embeds(disallowed: list[api.ValidationResponse]) -> list[Emb
     line_items = [line_item_disallowed(b) for b in disallowed]
     return embeds_from_line_items("Disallowed beatmapsets found", line_items, discord.Color.red())
 
-def partial_sets_embeds(partial: list[api.ValidationResponse]) -> list[Embed]:
-    line_items = [line_item_partial(b) for b in partial]
+def partial_sets_embeds(potential: list[api.ValidationResponse]) -> list[Embed]:
+    line_items = [line_item_partial(b) for b in potential]
     return embeds_from_line_items("Partially disallowed beatmapsets found", line_items, discord.Color.yellow())
 
 def allowed_graveyard_sets_embeds(graveyard: list[api.ValidationResponse]) -> list[Embed]:
@@ -155,18 +155,18 @@ def count_partial(responses: list[api.ValidationResponse]) -> int:
 def count_dmca(responses: list[api.ValidationResponse]) -> int:
     return len(dmca_responses(responses))
 
-def success_error_text(error: bool, partial: bool):
+def success_error_text(error: bool, potential: bool):
     if error:
         return FAILURE_TEXT
 
-    if partial:
+    if potential:
         return WARN_TEXT
 
     return SUCCESS_TEXT
 
 def menu(interaction: discord.Interaction, responses: list[api.ValidationResponse]) -> ViewMenu:
     allowed = sorted([r for r in responses if r.complianceStatus == ComplianceStatus.OK], key=lambda r: r.artist)
-    partial = [r for r in responses if r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED]
+    potential = [r for r in responses if r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED]
     disallowed = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED and 
                   r.complianceFailureReason != ComplianceFailureReason.DMCA]
     dmca = [r for r in responses if r.complianceStatus == ComplianceStatus.DISALLOWED and 
@@ -177,7 +177,7 @@ def menu(interaction: discord.Interaction, responses: list[api.ValidationRespons
 
     dmca_count = len(dmca)
     disallowed_count = len(disallowed)
-    partial_count = len(partial)
+    partial_count = len(potential)
     graveyard_count = len(graveyard)
     ranked_count = len(ranked)
 
@@ -191,7 +191,7 @@ def menu(interaction: discord.Interaction, responses: list[api.ValidationRespons
         pages += disallowed_sets_embeds(disallowed)
 
     if partial_count > 0:
-        pages += partial_sets_embeds(partial)
+        pages += partial_sets_embeds(potential)
 
     if graveyard_count > 0:
         pages += allowed_graveyard_sets_embeds(graveyard)
