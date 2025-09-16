@@ -29,6 +29,9 @@ class ApiResponse:
 # - Response: https://github.com/hburn7/omc-api/blob/master/index.ts#L57
 async def validate(beatmap_ids: list[int]) -> Optional[ApiResponse]:
     secret = os.getenv("API_SECRET")
+    if not secret:
+        return None
+    
     endpoint = f"{os.getenv('API_URL')}/validate"
 
     async with aiohttp.ClientSession() as session:
