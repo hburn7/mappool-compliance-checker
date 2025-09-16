@@ -1,16 +1,20 @@
 import logging
 import logging.handlers
 import os
+from typing import Optional
+from dataclasses import dataclass
 
 import discord
-import ossapi
 from discord import app_commands, Embed
 from dotenv import load_dotenv
-from ossapi import OssapiAsync, Beatmapset
-from ossapi.enums import RankStatus
 from reactionmenu import ViewMenu, ViewButton
 
-import validator
+import api
+from constants import *
+
+load_dotenv()
+
+logger = logging.getLogger('client')
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -21,287 +25,363 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-load_dotenv()
-client_id = int(os.getenv('CLIENT_ID'))
-client_secret = os.getenv('CLIENT_SECRET')
-bot_token = os.getenv('TOKEN')
 
-oss_client = OssapiAsync(client_id, client_secret)
+@dataclass
+class CategorizedResponses:
+    ok: list[api.ValidationResponse]
+    potential: list[api.ValidationResponse]
+    disallowed: list[api.ValidationResponse]
+    failed_ids: list[int]
+    
+    @property
+    def dmca_count(self) -> int:
+        return sum(1 for r in self.disallowed 
+                   if r.complianceFailureReason == ComplianceFailureReason.DMCA)
+    
+    @property
+    def other_disallowed_count(self) -> int:
+        return sum(1 for r in self.disallowed 
+                   if r.complianceFailureReason != ComplianceFailureReason.DMCA)
+    
+    @property
+    def potential_count(self) -> int:
+        return len(self.potential)
+    
+    @property
+    def graveyard_count(self) -> int:
+        return sum(1 for r in self.ok 
+                   if r.status not in ["ranked", "loved", "approved"])
+    
+    @property
+    def ranked_count(self) -> int:
+        return sum(1 for r in self.ok 
+                   if r.status in ["ranked", "loved", "approved"])
+    
+    @property
+    def failed_count(self) -> int:
+        return len(self.failed_ids)
+    
+    def get_combined_list(self) -> list[api.ValidationResponse]:
+        combined = []
+        
+        dmca = [r for r in self.disallowed 
+                if r.complianceFailureReason == ComplianceFailureReason.DMCA]
+        combined.extend(dmca)
+        
+        other_disallowed = [r for r in self.disallowed 
+                           if r.complianceFailureReason != ComplianceFailureReason.DMCA]
+        combined.extend(other_disallowed)
+        
+        combined.extend(self.potential)
+        combined.extend(self.ok)
+        
+        return combined
 
-logger = logging.getLogger('client')
 
-PAGE_SIZE = 25
+class ResponseFormatter:
+    @staticmethod
+    def format_line_item(response: api.ValidationResponse) -> str:
+        base_url = OSU_BEATMAPSET_URL.format(response.beatmapsetId)
+        icon = ResponseFormatter._get_icon(response)
+        
+        line = f"{icon} [{response.artist} - {response.title}]({base_url})"
+        
+        if (response.complianceStatus == ComplianceStatus.DISALLOWED and
+            response.complianceFailureReasonString and 
+            response.complianceFailureReason == ComplianceFailureReason.DISALLOWED_ARTIST):
+            line += f" - {response.complianceFailureReasonString}"
+        
+        if response.notes:
+            line += f" - {response.notes}"
+        
+        return line
+    
+    @staticmethod
+    def _get_icon(response: api.ValidationResponse) -> str:
+        if response.complianceStatus == ComplianceStatus.DISALLOWED:
+            if response.complianceFailureReason == ComplianceFailureReason.DMCA:
+                return ICON_DMCA
+            return ICON_DISALLOWED
+        elif response.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED:
+            return ICON_WARNING
+        else:  
+            if response.status in ["ranked", "approved"]:
+                return ICON_RANKED
+            elif response.status == "loved":
+                return ICON_LOVED
+            return ICON_OK
+    
+    @staticmethod
+    def categorize_responses(responses: list[api.ValidationResponse], 
+                           failed_ids: Optional[list[int]] = None) -> CategorizedResponses:
+        ok = []
+        potential = []
+        disallowed = []
+        
+        for r in responses:
+            if r.complianceStatus == ComplianceStatus.OK:
+                ok.append(r)
+            elif r.complianceStatus == ComplianceStatus.POTENTIALLY_DISALLOWED:
+                potential.append(r)
+            elif r.complianceStatus == ComplianceStatus.DISALLOWED:
+                disallowed.append(r)
+        
+        disallowed.sort(key=lambda x: (
+            x.complianceFailureReason if x.complianceFailureReason is not None else 999
+        ))
+        
+        ok.sort(key=lambda x: (
+            ResponseFormatter._get_status_priority(x), 
+            x.artist.lower() if x.artist else ''
+        ))
+        potential.sort(key=lambda x: x.artist.lower() if x.artist else '')
+        
+        return CategorizedResponses(ok=ok, potential=potential, disallowed=disallowed, 
+                                   failed_ids=failed_ids or [])
+    
+    @staticmethod
+    def _get_status_priority(response: api.ValidationResponse) -> int:
+        if response.status in ["ranked", "approved"]:
+            return 0
+        elif response.status == "loved":
+            return 1
+        return 2
 
-SUCCESS_TEXT = "🥳 No disallowed beatmapsets found!"
-FAILURE_TEXT = "⛔ Disallowed beatmapsets found!"
-WARN_TEXT = "⚠️Ensure all flagged beatmapsets are compliant!"
+
+class InputSanitizer:
+    @staticmethod
+    def sanitize_map_ids(user_input: str) -> set[int]:
+        if not user_input:
+            return set()
+        
+        cleaned = (user_input
+                  .replace(',', ' ')
+                  .replace('\t', ' ')
+                  .replace('\n', ' ')
+                  .replace('#osu', '')
+                  .replace('#taiko', '')
+                  .replace('#fruits', '')
+                  .replace('#mania', ''))
+        
+        ids = set()
+        for part in cleaned.split():
+            try:
+                if '/' in part:
+                    part = part.split('/')[-1]
+                map_id = int(part)
+                if map_id > 0:
+                    ids.add(map_id)
+            except (ValueError, TypeError):
+                continue
+        
+        return ids
+
+
+class MenuBuilder:
+    @staticmethod
+    def create_embeds(responses: list[api.ValidationResponse], 
+                     failed_ids: list[int],
+                     title: str, 
+                     color: discord.Color) -> list[Embed]:
+        if not responses and not failed_ids:
+            embed = discord.Embed(title=title, description="No beatmaps found", color=color)
+            return [embed]
+        
+        embeds = []
+        line_items = [ResponseFormatter.format_line_item(r) for r in responses]
+        
+        # Add failed beatmap IDs with error emoji and note
+        for beatmap_id in failed_ids:
+            line_items.append(f"⁉️ Beatmap ID {beatmap_id} - Processing failed")
+        
+        for i in range(0, len(line_items), PAGE_SIZE):
+            embed = discord.Embed(title=title, color=color)
+            embed.description = '\n'.join(line_items[i:i + PAGE_SIZE])
+            embeds.append(embed)
+        
+        return embeds
+    
+    @staticmethod
+    def get_status_color(categorized: CategorizedResponses) -> tuple[str, discord.Color]:
+        if categorized.dmca_count > 0 or categorized.other_disallowed_count > 0:
+            return FAILURE_TEXT, discord.Color.red()
+        elif categorized.potential_count > 0 or categorized.failed_count > 0:
+            return WARN_TEXT, discord.Color.yellow()
+        else:
+            return SUCCESS_TEXT, discord.Color.green()
+    
+    @staticmethod
+    def build_footer_text(categorized: CategorizedResponses, status_text: str) -> str:
+        footer = (f'\n{status_text}\n️'
+                 f'⛔: {categorized.dmca_count} | '
+                 f'❌: {categorized.other_disallowed_count} | '
+                 f'⚠️: {categorized.potential_count} | '
+                 f'☑️: {categorized.graveyard_count} | '
+                 f'✅ / 💞: {categorized.ranked_count}')
+        
+        if categorized.failed_count > 0:
+            footer += f' | ⁉️: {categorized.failed_count}'
+        
+        return footer
+    
+    @staticmethod
+    def create_menu(interaction: discord.Interaction, 
+                   responses: list[api.ValidationResponse],
+                   failed_ids: Optional[list[int]] = None) -> Optional[ViewMenu]:
+        try:
+            logger.debug(f"Creating menu for {len(responses)} responses and {len(failed_ids or [])} failures")
+            
+            categorized = ResponseFormatter.categorize_responses(responses, failed_ids)
+            combined = categorized.get_combined_list()
+            
+            logger.debug(f"Combined list has {len(combined)} items")
+            
+            status_text, color = MenuBuilder.get_status_color(categorized)
+            
+            embeds = MenuBuilder.create_embeds(
+                combined,
+                categorized.failed_ids,
+                "Validation Result", 
+                color
+            )
+            
+            logger.debug(f"Created {len(embeds)} embed(s)")
+            
+            footer_text = MenuBuilder.build_footer_text(categorized, status_text)
+            for embed in embeds:
+                embed.set_footer(text=footer_text)
+            
+            view_menu = ViewMenu(interaction, menu_type=ViewMenu.TypeEmbed)
+            view_menu.add_pages(embeds)
+            
+            logger.debug(f"ViewMenu created with {len(embeds)} pages")
+            
+            back_button = ViewButton.back()
+            next_button = ViewButton.next()
+            
+            if len(embeds) <= 1:
+                back_button.disabled = True
+                next_button.disabled = True
+            
+            view_menu.add_button(back_button)
+            view_menu.add_button(next_button)
+            
+            return view_menu
+            
+        except Exception as e:
+            logger.error(f"Error creating menu: {e}", exc_info=True)
+            return None
+
+
+def setup_logging() -> None:
+    if not os.path.exists(LOG_DIR):
+        os.mkdir(LOG_DIR)
+    
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+    numeric_level = getattr(logging, log_level, logging.INFO)
+    
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_level)
+    
+    file_handler = logging.handlers.RotatingFileHandler(
+        filename=LOG_FILE,
+        encoding='utf-8',
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT
+    )
+    
+    formatter = logging.Formatter(LOG_FORMAT, LOG_DATE_FORMAT, style='{')
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    
+    logger.info(f"Logging configured at {log_level} level")
+
 
 @client.event
 async def on_ready():
     logger.info(f'Logged in as {client.user}')
     await tree.sync()
-
     logger.info('Commands synced, bot is ready!')
-
-def no_disallowed_beatmapsets_text():
-    return
-
-def line_item_dmca(beatmapset: Beatmapset) -> str:
-    return f"⛔ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
-
-def line_item_disallowed(beatmapset: Beatmapset) -> str:
-    base = f"❌ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
-    
-    # Check if artist found in title
-    title_artist, _ = validator.get_flagged_artist_in_title(beatmapset.title)
-    if title_artist:
-        base += f" - Disallowed artist '{title_artist}' found in title"
-    
-    return base
-
-def line_item_partial(beatmapset: Beatmapset) -> str:
-    key = validator.flag_key_match(beatmapset.artist)
-    title_artist, _ = validator.get_flagged_artist_in_title(beatmapset.title)
-
-    notes = None
-    if validator.description_contains_banned_source(beatmapset):
-        notes = 'Beatmapset description mentions a prohibited source.'
-    elif title_artist:
-        notes = f"Partially allowed artist '{title_artist}' found in title"
-        if key and validator.flagged_artists[key].notes:
-            notes += f" - {validator.flagged_artists[key].notes}"
-    elif key:
-        notes = validator.flagged_artists[key].notes
-
-    s = f":warning: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
-
-    if notes is not None:
-        s += f" - {notes}"
-
-    return s
-
-def line_item_allowed_unranked(beatmapset: Beatmapset) -> str:
-    return f":ballot_box_with_check: [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
-
-def line_item_allowed_ranked(beatmapset: Beatmapset) -> str:
-    return f"✅ [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
-
-def line_item_allowed_loved(beatmapset: Beatmapset) -> str:
-    return f"💞 [{beatmapset.artist} - {beatmapset.title}](https://osu.ppy.sh/beatmapsets/{beatmapset.id})"
-
-def embeds_from_line_items(title, line_items: list[str], color: discord.Color) -> list[Embed]:
-    embeds = []
-    for i in range(0, len(line_items), PAGE_SIZE):
-        embed = discord.Embed(title=title, color=color)
-        embed.description = '\n'.join(line_items[i:i + PAGE_SIZE])
-        embeds.append(embed)
-
-    return embeds
-
-def page_count(n: int) -> int:
-    # 1 page per PAGE_SIZE items
-    return n // PAGE_SIZE + 1
-
-def dmca_sets_embeds(dmca: list[Beatmapset]) -> list[Embed]:
-    line_items = [line_item_dmca(b) for b in dmca]
-    return embeds_from_line_items("DMCA'd beatmapsets found", line_items, discord.Color.red())
-
-def disallowed_sets_embeds(disallowed: list[Beatmapset]) -> list[Embed]:
-    line_items = [line_item_disallowed(b) for b in disallowed]
-    return embeds_from_line_items("Disallowed beatmapsets found", line_items, discord.Color.red())
-
-def partial_sets_embeds(partial: list[Beatmapset]) -> list[Embed]:
-    line_items = [line_item_partial(b) for b in partial]
-    return embeds_from_line_items("Partially disallowed beatmapsets found", line_items, discord.Color.yellow())
-
-def allowed_graveyard_sets_embeds(graveyard: list[Beatmapset]) -> list[Embed]:
-    line_items = [line_item_allowed_unranked(b) for b in graveyard]
-    return embeds_from_line_items("Pending/Graveyard beatmapsets found", line_items, discord.Color.blurple())
-
-def ranked_sets_embeds(ranked: list[Beatmapset]) -> list[Embed]:
-    line_items = [line_item_allowed_loved(b) if b.status == RankStatus.LOVED else line_item_allowed_ranked(b) for b in ranked]
-    return embeds_from_line_items("Ranked/Loved beatmapsets found", line_items, discord.Color.green())
-
-def dmca_sets(beatmapsets: list[Beatmapset]) -> list[Beatmapset]:
-    return [b for b in beatmapsets if b.availability.more_information is not None or b.availability.download_disabled]
-
-def count_graveyard(beatmapsets: list[Beatmapset]) -> int:
-    return len([b for b in beatmapsets if b.status not in [RankStatus.RANKED, RankStatus.LOVED, RankStatus.APPROVED]])
-
-def count_ranked(beatmapsets: list[Beatmapset]) -> int:
-    return len([b for b in beatmapsets if b.status == RankStatus.RANKED or b.status == RankStatus.LOVED or b.status == RankStatus.APPROVED])
-
-def count_allowed(beatmapsets: list[Beatmapset]) -> int:
-    return len([b for b in beatmapsets if validator.is_allowed(b)])
-
-def count_disallowed(beatmapsets: list[Beatmapset]) -> int:
-    return len([b for b in beatmapsets if not validator.is_allowed(b)])
-
-def count_partial(beatmapsets: list[Beatmapset]) -> int:
-    return len([b for b in beatmapsets if validator.is_partial(b)])
-
-def count_dmca(beatmapsets: list[Beatmapset]) -> int:
-    return len(dmca_sets(beatmapsets))
-
-def success_error_text(error: bool, partial: bool):
-    if error:
-        return FAILURE_TEXT
-
-    if partial:
-        return WARN_TEXT
-
-    return SUCCESS_TEXT
-
-def menu(interaction: discord.Interaction, beatmapsets: list[Beatmapset], dmca: list[Beatmapset]) -> ViewMenu:
-    allowed = sorted([b for b in beatmapsets if validator.is_allowed(b)], key=lambda b: b.artist)
-    partial = [b for b in beatmapsets if validator.is_partial(b)]
-    disallowed = [b for b in beatmapsets if validator.is_disallowed(b)]
-
-    ranked = [b for b in allowed if b.status == RankStatus.RANKED or b.status == RankStatus.LOVED or b.status == RankStatus.APPROVED]
-    graveyard = [b for b in allowed if b not in ranked]
-
-    dmca_count = count_dmca(beatmapsets)
-    disallowed_count = count_disallowed(disallowed)
-    partial_count = count_partial(partial)
-    graveyard_count = count_graveyard(allowed)
-    ranked_count = count_ranked(allowed)
-
-    view_menu = ViewMenu(interaction, menu_type=ViewMenu.TypeEmbed)
-    pages = []
-
-    if dmca_count > 0:
-        pages += dmca_sets_embeds(dmca)
-
-    if disallowed_count > 0:
-        pages += disallowed_sets_embeds(disallowed)
-
-    if partial_count > 0:
-        pages += partial_sets_embeds(partial)
-
-    if graveyard_count > 0:
-        pages += allowed_graveyard_sets_embeds(graveyard)
-
-    if ranked_count > 0:
-        pages += ranked_sets_embeds(ranked)
-
-    status_text = success_error_text(dmca_count > 0 or disallowed_count > 0, partial_count > 0)
-
-    for page in pages:
-        page.set_footer(text=f'\n{status_text}\n️⛔: %d | ❌: %d | ⚠️%d | ☑️: %d | ✅ / 💞: %d' %
-                             (dmca_count, disallowed_count, partial_count, graveyard_count, ranked_count))
-
-    view_menu.add_pages(pages)
-    view_menu.add_button(ViewButton.back())
-    view_menu.add_button(ViewButton.next())
-
-    return view_menu
-
-
-def sanitize(u_input: str) -> set[int]:
-    ids = []
-
-    # Split the input by commas, spaces, tabs, or new lines
-    parts = (u_input
-             .replace(',', ' ')
-             .replace('\t', ' ')
-             .replace('\n', ' ')
-             .replace('#osu', '')
-             .replace('#taiko', '')
-             .replace('#fruits', '')
-             .replace('#mania', '')
-             .split())
-
-    for part in parts:
-        try:
-            # Try to convert each part to an integer
-            if '/' in part:
-                part = part.split('/')[-1]
-
-            ids.append(int(part))
-        except ValueError:
-            # If any part is not an integer, return an empty list
-            return set([])
-
-    return set(ids)
-
-
-async def fetch_beatmapsets(ids: set[int]) -> (list[ossapi.Beatmapset], list[int]):
-    """Fetches the beatmaps for the provided ids
-
-    :param ids: A set of beatmap ids
-
-    :return: A tuple containing a list of beatmapsets and a list of ids which were not found"""
-    # Split ids into batches of 50 maps
-    id_sets = [list(ids)[i:i + 50] for i in range(0, len(ids), 50)]
-    beatmaps = []
-
-    for set_ in id_sets:
-        beatmaps += await oss_client.beatmaps(list(set(set_)))
-
-    returned_beatmapset_ids = set([b.beatmapset_id for b in beatmaps])
-    all_ids = returned_beatmapset_ids | set([b.id for b in beatmaps])
-
-    # Find beatmapsets of any ids which were not found here
-    error_ids = ids - all_ids
-    return [await oss_client.beatmapset(b.beatmapset_id) for b in beatmaps], error_ids
-
-
-def run():
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
-
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-
-    handler = logging.handlers.RotatingFileHandler(
-        filename='logs/discord.log',
-        encoding='utf-8',
-        maxBytes=32 * 1024 * 1024,  # 32 MiB
-        backupCount=5  # Rotate through 5 files
-    )
-    dt_fmt = '%Y-%m-%d %H:%M:%S'
-    formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
-    handler.setFormatter(formatter)
-    root_logger.addHandler(handler)
-
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)  # Reuse the same formatter
-    root_logger.addHandler(console_handler)
-
-    token = os.getenv('TOKEN')
-    client.run(token, log_handler=None)
 
 
 @tree.command(description="Validates a list of maps against osu!'s content-usage listing.")
-@app_commands.checks.cooldown(10, 45)
+@app_commands.checks.cooldown(COOLDOWN_RATE, COOLDOWN_PER)
 async def validate(ctx: discord.Interaction, u_input: str):
     """Validates a mappool. Input should be a list of map IDs separated by commas, spaces, tabs, or new lines."""
-    await ctx.response.defer()  # For interactions, use ctx.response.defer()
-    map_ids = sanitize(u_input)
-
-    if len(map_ids) > 200:
-        await ctx.followup.send('Too many map IDs provided.')  # Use followup after deferring
-        return
-
+    await ctx.response.defer()
+    
+    map_ids = InputSanitizer.sanitize_map_ids(u_input)
+    
     if not map_ids:
-        await ctx.followup.send('Invalid input (map id collection empty).')
+        await ctx.followup.send('Invalid input: No valid map IDs found.')
         return
-
+    
+    if len(map_ids) > MAX_MAP_IDS:
+        await ctx.followup.send(f'Too many map IDs provided. Maximum allowed: {MAX_MAP_IDS}')
+        return
+    
     try:
-        beatmapsets, error_ids = await fetch_beatmapsets(map_ids)
-        beatmapsets = list(sorted(beatmapsets, key=lambda b: b.artist))
-        dmca = dmca_sets(beatmapsets)
-
-        view_menu = menu(ctx, beatmapsets, dmca)
+        api_response = await api.validate(list(map_ids))
+        
+        if api_response is None:
+            await ctx.followup.send('Failed to validate beatmaps. Please try again later.')
+            return
+        
+        if not api_response.results and not api_response.failures:
+            await ctx.followup.send('No beatmap data received from the API.')
+            return
+        
+        logger.info(f"Validating {len(map_ids)} beatmaps for {ctx.user}")
+        if api_response.failures:
+            logger.warning(f"Failed to process {len(api_response.failures)} beatmaps: {api_response.failures}")
+        
+        view_menu = MenuBuilder.create_menu(ctx, api_response.results, api_response.failures)
+        if view_menu is None:
+            await ctx.followup.send('An error occurred while creating the response menu.')
+            return
+            
+        logger.debug("Starting ViewMenu")
         await view_menu.start()
+        logger.debug("ViewMenu started successfully")
+        
     except ValueError as e:
-        logger.warning(f'Invalid input [{e}].')
-        await ctx.followup.send(f'Invalid input [{e}].')
-        return
+        logger.warning(f'Invalid input: {e}')
+        await ctx.followup.send(f'Invalid input: {e}')
+    except Exception as e:
+        logger.error(f'Unexpected error during validation: {e}', exc_info=True)
+        await ctx.followup.send('An unexpected error occurred. Please try again later.')
 
 
 @tree.error
-async def on_app_command_error(interaction, error):
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CommandOnCooldown):
-        await interaction.response.send_message(f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", ephemeral=True)
+        await interaction.response.send_message(
+            f"Command is on cooldown. Try again in {error.retry_after:.2f} seconds.", 
+            ephemeral=True
+        )
+    else:
+        logger.error(f"Unhandled command error: {error}", exc_info=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                "An error occurred while processing the command.",
+                ephemeral=True
+            )
+
+
+def run():
+    setup_logging()
+    
+    token = os.getenv('TOKEN')
+    if not token:
+        logger.error('TOKEN environment variable not set')
+        return
+    
+    try:
+        client.run(token, log_handler=None)
+    except Exception as e:
+        logger.error(f'Failed to start bot: {e}', exc_info=True)
+        raise
