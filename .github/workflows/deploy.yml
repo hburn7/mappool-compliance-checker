@@ -42,7 +42,8 @@ jobs:
             docker rm omcc || true
             docker pull stagecodes/osu-mappool-compliance-checker:latest
             docker run -d --restart always --name omcc \
-            -e CLIENT_ID=${{ secrets.CLIENT_ID }} \
-            -e CLIENT_SECRET=${{ secrets.CLIENT_SECRET }} \
+            -e API_SECRET=${{ secrets.API_SECRET }} \
+            -e API_URL=${{ secrets.API_URL }} \
+            -e LOG_LEVEL=${{ secrets.LOG_LEVEL }} \
             -e TOKEN=${{ secrets.TOKEN }} \
             stagecodes/osu-mappool-compliance-checker:latest
