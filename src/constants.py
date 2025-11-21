@@ -13,7 +13,6 @@ class ComplianceFailureReason(IntEnum):
     FA_TRACKS_ONLY = 4
 
 PAGE_SIZE = 25
-MAX_MAP_IDS = 200
 COOLDOWN_RATE = 10
 COOLDOWN_PER = 45
 

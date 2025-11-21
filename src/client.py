@@ -320,10 +320,6 @@ async def validate(ctx: discord.Interaction, u_input: str):
         await ctx.followup.send('Invalid input: No valid map IDs found.')
         return
     
-    if len(map_ids) > MAX_MAP_IDS:
-        await ctx.followup.send(f'Too many map IDs provided. Maximum allowed: {MAX_MAP_IDS}')
-        return
-    
     try:
         api_response = await api.validate(list(map_ids))
         
