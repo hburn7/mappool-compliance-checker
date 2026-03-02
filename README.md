@@ -23,10 +23,20 @@ Validates a collection of beatmaps against osu!'s [content usage permissions](ht
 
 #### `/validate-csv`
 
-Validates a CSV file of artist/title metadata against osu!'s content usage permissions. Upload a `.csv` file with `artist` and `title` columns (case-insensitive). Optional columns: `artist_unicode`, `title_unicode`.
+Validates a CSV file of artist/title metadata against osu!'s content usage permissions.
 
 ```
 /validate-csv <file> [strict]
+```
+
+The CSV must include a header row with `artist` and `title` columns (case-insensitive). Optionally include `artist_unicode` and `title_unicode` columns. Rows missing an artist or title are skipped. Both UTF-8 and UTF-8 with BOM encodings are supported.
+
+Example:
+
+```csv
+artist,title,artist_unicode,title_unicode
+Camellia,GHOST,かめりあ,GHOST
+Frums,memoryfactory.lzh,Frums,memoryfactory.lzh
 ```
 
 #### Strict mode
