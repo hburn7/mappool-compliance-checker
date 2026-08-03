@@ -11,7 +11,7 @@ Add this app to your Discord server with [this link](https://discord.com/oauth2/
 
 ### Commands
 
-Both commands return compliance results and will inform you if any beatmaps are non-compliant. If you think you have received a false positive (where a beatmap is not marked correctly), please report an issue and [Stage](https://osu.ppy.sh/users/8191845) will review it with input from the Tournament Committee if necessary.
+Both commands return compliance results and will inform you if any beatmaps are non-compliant. If you think you have received a false positive (where a beatmap is not marked correctly), please report an issue on [this repository](https://github.com/hburn7/omc-api) and it will be addressed.
 
 #### `/validate`
 
